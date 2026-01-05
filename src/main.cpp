@@ -949,7 +949,6 @@ class AdvertisedDeviceCallbacks: public NimBLEAdvertisedDeviceCallbacks {
             // - Raven devices advertise multiple service UUIDs (typically 6-8)
             // - Each UUID is 36 characters + JSON overhead
             // - GPS data adds ~200 bytes
-            // - Battery data adds ~100 bytes
             // - Service array can exceed 500 bytes alone
             DynamicJsonDocument doc(2048);
             doc["timestamp"] = millis();
