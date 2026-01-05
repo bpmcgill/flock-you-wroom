@@ -34,7 +34,6 @@ Flock You is an advanced detection system designed to identify Flock Safety surv
 - **OLED Display**: 128x64 SSD1315 display with real-time status
   - Detection count (WiFi + BLE)
   - GPS coordinates and status
-  - Battery percentage
   - SD card status
   - Signal strength (RSSI)
   - Current scanning status
@@ -50,13 +49,6 @@ Flock You is an advanced detection system designed to identify Flock Safety surv
 - **CSV Log Files**: Automatic logging to MicroSD card
 - **Detection Records**: Timestamp, protocol, MAC, RSSI, GPS coordinates
 - **Persistent Storage**: Data survives power cycles
-- **Battery Data**: Logs battery voltage and percentage
-
-### Battery Monitoring (ESP32-WROOM-32)
-- **Voltage Monitoring**: Real-time 18650 battery voltage reading
-- **Percentage Display**: Battery percentage (0-100%) on OLED
-- **JSON Integration**: Battery data included in all detections
-- **Low Power Awareness**: Helps manage portable operation
 
 ### Audio Alert System (Xiao ESP32 S3)
 - **Boot Sequence**: 2 beeps (low pitch → high pitch) on startup
@@ -81,8 +73,8 @@ Flock You is an advanced detection system designed to identify Flock Safety surv
 - **GPS Module**: GY-NEO6Mv2 GPS Module (UART)
 - **Storage**: MicroSD Card Module (SPI)
 - **Audio**: 2-pin 5V Active Buzzer
-- **Power**: V3 Battery Shield with 18650 3500mAh battery
-- **Connectivity**: USB for programming and power
+- **Power**: USB for programming and power, or external 5V power supply
+- **Connectivity**: Micro-USB or USB-C (depending on DevKit version)
 
 #### Pin Mapping for ESP32 DevKit V4
 ```
@@ -98,42 +90,85 @@ SD Card CS         | GPIO 15    | SPI Chip Select
 SD Card MOSI       | GPIO 13    | SPI MOSI (HSPI)
 SD Card MISO       | GPIO 12    | SPI MISO (HSPI)
 SD Card SCK        | GPIO 14    | SPI Clock (HSPI)
-Battery Monitor    | GPIO 34    | ADC for battery voltage (optional)
 ```
 
-#### Wiring for ESP32-WROOM-32 Setup
+#### Complete Wiring Diagram for ESP32-WROOM-32 Setup
+
+**WS2812B LED Strip Connection:**
 ```
-ESP32 DevKit V4    WS2812B LED Strip
-GPIO5         ---> DIN (Data In)
-5V            ---> VCC
-GND           ---> GND
+ESP32 DevKit V4           WS2812B LED Strip
+┌─────────────┐          ┌──────────────┐
+│   GPIO 5    │─────────>│ DIN (Data)   │
+│   5V        │─────────>│ VCC (+5V)    │
+│   GND       │─────────>│ GND          │
+└─────────────┘          └──────────────┘
+```
 
-ESP32 DevKit V4    SSD1315 OLED
-GPIO21 (SDA)  ---> SDA
-GPIO22 (SCL)  ---> SCL
-3.3V          ---> VCC
-GND           ---> GND
+**SSD1315 OLED Display Connection:**
+```
+ESP32 DevKit V4           SSD1315 OLED (128x64)
+┌─────────────┐          ┌──────────────┐
+│ GPIO21(SDA) │<────────>│ SDA          │
+│ GPIO22(SCL) │─────────>│ SCL          │
+│   3.3V      │─────────>│ VCC          │
+│   GND       │─────────>│ GND          │
+└─────────────┘          └──────────────┘
+```
 
-ESP32 DevKit V4    GPS Module (GY-NEO6Mv2)
-GPIO16 (RX2)  ---> TX (GPS transmit)
-GPIO17 (TX2)  ---> RX (GPS receive)
-3.3V or 5V    ---> VCC
-GND           ---> GND
+**GY-NEO6Mv2 GPS Module Connection:**
+```
+ESP32 DevKit V4           GY-NEO6Mv2 GPS
+┌─────────────┐          ┌──────────────┐
+│ GPIO16(RX2) │<─────────│ TX           │
+│ GPIO17(TX2) │─────────>│ RX           │
+│ 3.3V or 5V  │─────────>│ VCC          │
+│   GND       │─────────>│ GND          │
+└─────────────┘          └──────────────┘
+Note: Most GPS modules work with both 3.3V and 5V
+```
 
-ESP32 DevKit V4    SD Card Module
-GPIO15        ---> CS
-GPIO13        ---> MOSI
-GPIO12        ---> MISO
-GPIO14        ---> SCK
-5V            ---> VCC
-GND           ---> GND
+**MicroSD Card Module Connection:**
+```
+ESP32 DevKit V4           SD Card Module
+┌─────────────┐          ┌──────────────┐
+│  GPIO 15    │─────────>│ CS           │
+│  GPIO 13    │─────────>│ MOSI         │
+│  GPIO 12    │<─────────│ MISO         │
+│  GPIO 14    │─────────>│ SCK          │
+│   5V        │─────────>│ VCC          │
+│   GND       │─────────>│ GND          │
+└─────────────┘          └──────────────┘
+```
 
-ESP32 DevKit V4    Active Buzzer
-GPIO23        ---> Positive (+)
-GND           ---> Negative (-)
+**Active Buzzer Connection:**
+```
+ESP32 DevKit V4           Active Buzzer (5V)
+┌─────────────┐          ┌──────────────┐
+│  GPIO 23    │─────────>│ Positive (+) │
+│   GND       │─────────>│ Negative (-) │
+└─────────────┘          └──────────────┘
+```
 
-ESP32 DevKit V4    Battery Monitoring (optional)
-GPIO34        ---> Voltage divider output
+**Complete System Wiring Overview:**
+```
+                           ┌──────────────────────┐
+                           │  ESP32 DevKit V4     │
+                           │                      │
+                      ┌────│ 5V    GND     3.3V  │────┐
+                      │    │                      │    │
+         ┌────────────┼────│ GPIO Pins:          │────┼─────┐
+         │            │    │  5, 12-17, 21-23    │    │     │
+         │            │    └──────────────────────┘    │     │
+         │            │                                │     │
+    ┌────▼──┐    ┌───▼────┐    ┌────────┐    ┌──────▼──┐  │
+    │ LEDs  │    │  GPS   │    │  OLED  │    │   SD    │  │
+    │(GPIO5)│    │(16,17) │    │(21,22) │    │(12-15)  │  │
+    └───────┘    └────────┘    └────────┘    └─────────┘  │
+                                                            │
+                                                      ┌─────▼──┐
+                                                      │ Buzzer │
+                                                      │(GPIO23)│
+                                                      └────────┘
 ```
 
 ### Option 2: Oui-Spy Device (Available at colonelpanic.tech)
@@ -156,11 +191,46 @@ GND         ---> Negative (-)
 
 ## Installation
 
+### Development Environment Options
+
+You can use any of these IDEs/tools to program the ESP32-WROOM-32:
+
+#### Option 1: PlatformIO (Recommended)
+- **PlatformIO IDE** (VS Code extension) - Best for beginners
+  - Install VS Code: https://code.visualstudio.com/
+  - Install PlatformIO extension from VS Code marketplace
+  - Open the project folder in VS Code
+  - Use the PlatformIO toolbar to build and upload
+
+- **PlatformIO Core** (Command Line)
+  - Install: `pip install platformio`
+  - Build: `pio run -e esp32dev`
+  - Upload: `pio run -e esp32dev --target upload`
+  - Monitor: `pio device monitor -e esp32dev`
+
+#### Option 2: Arduino IDE
+- Download Arduino IDE 2.x: https://www.arduino.cc/en/software
+- Install ESP32 board support:
+  - Go to File → Preferences
+  - Add to "Additional Board Manager URLs": 
+    `https://raw.githubusercontent.com/espressif/arduino-esp32/gh-pages/package_esp32_index.json`
+  - Go to Tools → Board → Boards Manager
+  - Search "esp32" and install "ESP32 by Espressif Systems"
+- Install required libraries via Library Manager:
+  - NimBLE-Arduino
+  - ArduinoJson
+  - Adafruit NeoPixel
+  - Adafruit SSD1306
+  - TinyGPSPlus
+  - SdFat
+- Select board: Tools → Board → ESP32 Arduino → ESP32 Dev Module
+- Open `src/main.cpp` and upload
+
 ### Prerequisites
-- PlatformIO IDE or PlatformIO Core
-- Python 3.8+ (for web interface)
-- USB-C cable for programming
-- Oui-Spy device from [colonelpanic.tech](https://colonelpanic.tech)
+- One of the IDEs listed above (PlatformIO recommended)
+- Python 3.8+ (optional, for web interface)
+- USB cable (Micro-USB or USB-C depending on your ESP32 DevKit)
+- ESP32-WROOM-32 DevKit V4 board and components listed above
 
 ### Setup Instructions
 
@@ -291,12 +361,11 @@ When a Raven device is detected, the system provides:
 - **PSRAM**: None
 - **WiFi**: 2.4GHz 802.11 b/g/n
 - **Bluetooth**: BLE 4.2
-- **ADC**: 12-bit (for battery monitoring)
 - **I2C**: Hardware I2C for OLED
 - **SPI**: Hardware HSPI for SD card
 - **UART**: UART0 (USB serial), UART2 (GPS)
 - **GPIO**: 34 pins available
-- **Power**: 3.3V logic, 5V USB/battery input
+- **Power**: 3.3V logic, 5V USB input
 
 ### Xiao ESP32 S3
 - **Flash Memory**: 8MB
@@ -343,8 +412,6 @@ When a Raven device is detected, the system provides:
   "gps_longitude": -118.243683,
   "gps_altitude": 100.5,
   "gps_satellites": 8,
-  "battery_percentage": 87,
-  "battery_voltage": 3.95,
   "threat_score": 95,
   "matched_patterns": ["ssid_pattern", "mac_prefix"],
   "device_info": {
@@ -372,8 +439,6 @@ When a Raven device is detected, the system provides:
   "gps_longitude": -118.243683,
   "gps_altitude": 100.5,
   "gps_satellites": 8,
-  "battery_percentage": 87,
-  "battery_voltage": 3.95,
   "raven_service_uuid": "00003100-0000-1000-8000-00805f9b34fb",
   "raven_service_description": "GPS Location Service (Lat/Lon/Alt)",
   "raven_firmware_version": "1.3.x (Latest)",
@@ -395,7 +460,7 @@ When a Raven device is detected, the system provides:
 ### Startup Sequence
 
 #### ESP32-WROOM-32 DevKit V4:
-1. **Power on** the device (via USB or battery)
+1. **Power on** the device via USB
 2. **Watch the OLED display** show boot screen
 3. **Listen for boot beeps** and observe **blue LED fade-in** animation
 4. **Wait for initialization**:
@@ -406,7 +471,6 @@ When a Raven device is detected, the system provides:
 5. **Check OLED status**:
    - Status should show "SCANNING"
    - GPS status will show "SEARCHING" then "FIX" when locked
-   - Battery percentage displayed
    - SD card shows "OK" or "ERR"
 6. **System ready** when display shows all systems initialized
 7. **Green breathing LEDs** indicate active scanning mode
@@ -422,7 +486,7 @@ When a Raven device is detected, the system provides:
 ### Detection Monitoring
 
 #### ESP32-WROOM-32 DevKit V4:
-- **OLED Display**: Real-time detection count, GPS coordinates, battery level
+- **OLED Display**: Real-time detection count, GPS coordinates, SD status
 - **LED Indicators**: Color-coded visual feedback
   - Green breathing: Scanning mode
   - Blue flash: WiFi detection
@@ -433,7 +497,6 @@ When a Raven device is detected, the system provides:
 - **Audio Alerts**: Buzzer beeps for detections and heartbeat
 - **SD Card Logging**: All detections logged to CSV file with GPS coordinates
 - **Serial Output**: Full JSON detection data via USB serial
-- **Battery Monitoring**: Real-time voltage and percentage on display
 
 #### Xiao ESP32 S3 / Oui-Spy:
 - **Web Dashboard**: Real-time detection display at `http://localhost:5000` (optional)
@@ -482,7 +545,7 @@ When a Raven device is detected, the system provides:
 - **WiFi Range**: Limited to 2.4GHz spectrum
 - **Detection Range**: Approximately 50-100 meters depending on environment
 - **False Positives**: Possible with similar device signatures
-- **Battery Life**: Continuous scanning reduces battery runtime
+- **Power**: USB-powered operation (portable battery packs can be used)
 
 ### Environmental Factors
 - **Interference**: Other WiFi networks may affect detection
@@ -508,11 +571,7 @@ When a Raven device is detected, the system provides:
    - Check data connection to GPIO5
    - Ensure 5V power supply is adequate (4 LEDs need ~240mA max)
    - Verify LED strip type (NEO_GRB + NEO_KHZ800)
-5. **Battery Percentage Incorrect**:
-   - Check voltage divider circuit on GPIO34
-   - Adjust multiplier in `getBatteryVoltage()` function
-   - Calibrate using known battery voltage
-6. **Active Buzzer Always On/Off**:
+5. **Active Buzzer Always On/Off**:
    - Verify buzzer is 5V active type (not passive/PWM)
    - Check connection to GPIO23
    - Test with simple digitalWrite HIGH/LOW

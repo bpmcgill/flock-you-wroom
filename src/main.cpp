@@ -33,7 +33,6 @@
 #define SD_MOSI 13         // SD Card MOSI (HSPI)
 #define SD_MISO 12         // SD Card MISO (HSPI)
 #define SD_SCK 14          // SD Card Clock (HSPI)
-#define BATTERY_PIN 34     // ADC for battery voltage monitoring
 
 // OLED Configuration
 #define SCREEN_WIDTH 128
@@ -304,32 +303,6 @@ void heartbeat_pulse() {
 }
 
 // ============================================================================
-// BATTERY MONITORING
-// ============================================================================
-
-// Battery voltage constants (18650 Li-ion)
-#define BATTERY_MAX_VOLTAGE 4.2  // Fully charged
-#define BATTERY_MIN_VOLTAGE 3.0  // Empty/cutoff
-#define BATTERY_MAX_VOLTAGE_X10 42  // 4.2V * 10
-#define BATTERY_MIN_VOLTAGE_X10 30  // 3.0V * 10
-
-float getBatteryVoltage() {
-    int raw = analogRead(BATTERY_PIN);
-    // Voltage divider circuit: 10kΩ/10kΩ from battery positive to GND
-    // Formula: (ADC_value / 4095) * 3.3V * 2 (for 1:1 voltage divider)
-    // Adjust multiplier if using different resistor values
-    return (raw / 4095.0) * 3.3 * 2.0;
-}
-
-int getBatteryPercentage() {
-    float voltage = getBatteryVoltage();
-    // Map voltage range to 0-100% for 18650 Li-ion battery
-    // 4.2V = 100%, 3.0V = 0%
-    int percentage = map((int)(voltage * 10), BATTERY_MIN_VOLTAGE_X10, BATTERY_MAX_VOLTAGE_X10, 0, 100);
-    return constrain(percentage, 0, 100);
-}
-
-// ============================================================================
 // GPS SYSTEM
 // ============================================================================
 
@@ -379,7 +352,7 @@ void initSDCard() {
     
     if (logFile.open(filename, O_WRONLY | O_CREAT | O_TRUNC)) {
         // Write CSV header
-        logFile.println("timestamp,protocol,detection_method,mac_address,rssi,ssid,device_name,gps_lat,gps_lon,battery_pct");
+        logFile.println("timestamp,protocol,detection_method,mac_address,rssi,ssid,device_name,gps_lat,gps_lon");
         logFile.close();
         printf("Created log file: %s\n", filename);
     } else {
@@ -419,8 +392,7 @@ void logDetectionToSD(const char* protocol, const char* method, const char* mac,
         } else {
             logFile.print(",");
         }
-        logFile.print(",");
-        logFile.println(getBatteryPercentage());
+        logFile.println();
         logFile.close();
     }
 }
@@ -478,10 +450,8 @@ void updateDisplay() {
         display.println(getGPSStatus());
     }
     
-    // Battery and SD status
-    display.print(F("Batt: "));
-    display.print(getBatteryPercentage());
-    display.print(F("%  SD: "));
+    // SD status
+    display.print(F("SD: "));
     display.println(sd_initialized ? F("OK") : F("ERR"));
     
     display.display();
@@ -556,10 +526,6 @@ void output_wifi_detection_json(const char* ssid, const uint8_t* mac, int rssi, 
     } else {
         doc["gps_status"] = getGPSStatus();
     }
-    
-    // Battery data
-    doc["battery_percentage"] = getBatteryPercentage();
-    doc["battery_voltage"] = getBatteryVoltage();
     
     // Detection pattern matching
     bool ssid_match = false;
@@ -655,10 +621,6 @@ void output_ble_detection_json(const char* mac, const char* name, int rssi, cons
     } else {
         doc["gps_status"] = getGPSStatus();
     }
-    
-    // Battery data
-    doc["battery_percentage"] = getBatteryPercentage();
-    doc["battery_voltage"] = getBatteryVoltage();
     
     // Detection pattern matching
     bool name_match = false;
@@ -1013,10 +975,6 @@ class AdvertisedDeviceCallbacks: public NimBLEAdvertisedDeviceCallbacks {
             } else {
                 doc["gps_status"] = getGPSStatus();
             }
-            
-            // Battery data
-            doc["battery_percentage"] = getBatteryPercentage();
-            doc["battery_voltage"] = getBatteryVoltage();
             
             // Raven-specific information
             doc["raven_service_uuid"] = detected_service_uuid;
