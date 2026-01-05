@@ -18,7 +18,39 @@ Flock You is an advanced detection system designed to identify Flock Safety surv
 - **Device Name Pattern Matching**: Detects BLE devices by advertised names
 - **BLE Service UUID Detection**: Identifies Raven gunshot detectors by service UUIDs (NEW)
 
-### Audio Alert System
+### Enhanced Visual & Audio Feedback System (ESP32-WROOM-32)
+- **LED Animations**: 4x WS2812B RGB LEDs with color-coded alerts
+  - **Boot Sequence**: Blue LED fade-in animation
+  - **Scanning Mode**: Slow green pulse (breathing effect)
+  - **WiFi Detection**: Blue flash
+  - **BLE Detection**: Purple flash
+  - **Detection Alert**: Fast red flashing (3 times)
+  - **Raven Detection**: Red + white strobe (critical threat)
+  - **Heartbeat Pulse**: Orange pulse every 10 seconds while device in range
+- **Active Buzzer Alerts**: Simple on/off beeping
+  - **Boot Sequence**: 2 beeps on startup
+  - **Detection Alert**: 3 fast beeps when device detected
+  - **Heartbeat**: 2 beeps every 10 seconds while device in range
+- **OLED Display**: 128x64 SSD1315 display with real-time status
+  - Detection count (WiFi + BLE)
+  - GPS coordinates and status
+  - SD card status
+  - Signal strength (RSSI)
+  - Current scanning status
+
+### GPS Location Tracking (ESP32-WROOM-32)
+- **Real-time GPS**: GY-NEO6Mv2 GPS module for location tracking
+- **Coordinate Logging**: All detections include GPS latitude/longitude
+- **Altitude Tracking**: Records altitude in meters
+- **Satellite Count**: Displays number of satellites in view
+- **Fix Status**: Shows GPS fix status (FIX, SEARCHING, NO_GPS)
+
+### SD Card Data Logging (ESP32-WROOM-32)
+- **CSV Log Files**: Automatic logging to MicroSD card
+- **Detection Records**: Timestamp, protocol, MAC, RSSI, GPS coordinates
+- **Persistent Storage**: Data survives power cycles
+
+### Audio Alert System (Xiao ESP32 S3)
 - **Boot Sequence**: 2 beeps (low pitch → high pitch) on startup
 - **Detection Alert**: 3 fast high-pitch beeps when device detected
 - **Heartbeat Pulse**: 2 beeps every 10 seconds while device remains in range
@@ -34,13 +66,118 @@ Flock You is an advanced detection system designed to identify Flock Safety surv
 
 ## Hardware Requirements
 
-### Option 1: Oui-Spy Device (Available at colonelpanic.tech)
+### Option 1: ESP32-WROOM-32 DevKit V4 (Enhanced System)
+- **Microcontroller**: ESP32-WROOM-32 on ESP32 DevKit V4 board
+- **LED System**: 4x WS2812B RGB LEDs (addressable LED strip)
+- **Display**: SSD1315 OLED Display (128x64, Blue/Yellow, I2C)
+- **GPS Module**: GY-NEO6Mv2 GPS Module (UART)
+- **Storage**: MicroSD Card Module (SPI)
+- **Audio**: 2-pin 5V Active Buzzer
+- **Power**: USB for programming and power, or external 5V power supply
+- **Connectivity**: Micro-USB or USB-C (depending on DevKit version)
+
+#### Pin Mapping for ESP32 DevKit V4
+```
+Component          | ESP32 GPIO | Notes
+-------------------|------------|----------------------------------
+WS2812B LEDs       | GPIO 5     | Data line (4 LEDs)
+Active Buzzer      | GPIO 23    | 2-pin 5V active buzzer
+OLED SDA           | GPIO 21    | I2C Data (SSD1315)
+OLED SCL           | GPIO 22    | I2C Clock (SSD1315)
+GPS TX             | GPIO 16    | UART2 RX (GPS transmit)
+GPS RX             | GPIO 17    | UART2 TX (GPS receive)
+SD Card CS         | GPIO 15    | SPI Chip Select
+SD Card MOSI       | GPIO 13    | SPI MOSI (HSPI)
+SD Card MISO       | GPIO 12    | SPI MISO (HSPI)
+SD Card SCK        | GPIO 14    | SPI Clock (HSPI)
+```
+
+#### Complete Wiring Diagram for ESP32-WROOM-32 Setup
+
+**WS2812B LED Strip Connection:**
+```
+ESP32 DevKit V4           WS2812B LED Strip
+┌─────────────┐          ┌──────────────┐
+│   GPIO 5    │─────────>│ DIN (Data)   │
+│   5V        │─────────>│ VCC (+5V)    │
+│   GND       │─────────>│ GND          │
+└─────────────┘          └──────────────┘
+```
+
+**SSD1315 OLED Display Connection:**
+```
+ESP32 DevKit V4           SSD1315 OLED (128x64)
+┌─────────────┐          ┌──────────────┐
+│ GPIO21(SDA) │<────────>│ SDA          │
+│ GPIO22(SCL) │─────────>│ SCL          │
+│   3.3V      │─────────>│ VCC          │
+│   GND       │─────────>│ GND          │
+└─────────────┘          └──────────────┘
+```
+
+**GY-NEO6Mv2 GPS Module Connection:**
+```
+ESP32 DevKit V4           GY-NEO6Mv2 GPS
+┌─────────────┐          ┌──────────────┐
+│ GPIO16(RX2) │<─────────│ TX           │
+│ GPIO17(TX2) │─────────>│ RX           │
+│ 3.3V or 5V  │─────────>│ VCC          │
+│   GND       │─────────>│ GND          │
+└─────────────┘          └──────────────┘
+Note: Most GPS modules work with both 3.3V and 5V
+```
+
+**MicroSD Card Module Connection:**
+```
+ESP32 DevKit V4           SD Card Module
+┌─────────────┐          ┌──────────────┐
+│  GPIO 15    │─────────>│ CS           │
+│  GPIO 13    │─────────>│ MOSI         │
+│  GPIO 12    │<─────────│ MISO         │
+│  GPIO 14    │─────────>│ SCK          │
+│   5V        │─────────>│ VCC          │
+│   GND       │─────────>│ GND          │
+└─────────────┘          └──────────────┘
+```
+
+**Active Buzzer Connection:**
+```
+ESP32 DevKit V4           Active Buzzer (5V)
+┌─────────────┐          ┌──────────────┐
+│  GPIO 23    │─────────>│ Positive (+) │
+│   GND       │─────────>│ Negative (-) │
+└─────────────┘          └──────────────┘
+```
+
+**Complete System Wiring Overview:**
+```
+                           ┌──────────────────────┐
+                           │  ESP32 DevKit V4     │
+                           │                      │
+                      ┌────│ 5V    GND     3.3V  │────┐
+                      │    │                      │    │
+         ┌────────────┼────│ GPIO Pins:          │────┼─────┐
+         │            │    │  5, 12-17, 21-23    │    │     │
+         │            │    └──────────────────────┘    │     │
+         │            │                                │     │
+    ┌────▼──┐    ┌───▼────┐    ┌────────┐    ┌──────▼──┐  │
+    │ LEDs  │    │  GPS   │    │  OLED  │    │   SD    │  │
+    │(GPIO5)│    │(16,17) │    │(21,22) │    │(12-15)  │  │
+    └───────┘    └────────┘    └────────┘    └─────────┘  │
+                                                            │
+                                                      ┌─────▼──┐
+                                                      │ Buzzer │
+                                                      │(GPIO23)│
+                                                      └────────┘
+```
+
+### Option 2: Oui-Spy Device (Available at colonelpanic.tech)
 - **Microcontroller**: Xiao ESP32 S3
 - **Wireless**: Dual WiFi/BLE scanning capabilities
 - **Audio**: Built-in buzzer system
 - **Connectivity**: USB-C for programming and power
 
-### Option 2: Standard Xiao ESP32 S3 Setup
+### Option 3: Standard Xiao ESP32 S3 Setup
 - **Microcontroller**: Xiao ESP32 S3 board
 - **Buzzer**: 3V buzzer connected to GPIO3 (D2)
 - **Power**: USB-C cable for programming and power
@@ -54,27 +191,89 @@ GND         ---> Negative (-)
 
 ## Installation
 
+### Development Environment Options
+
+You can use any of these IDEs/tools to program the ESP32-WROOM-32:
+
+#### Option 1: PlatformIO (Recommended)
+- **PlatformIO IDE** (VS Code extension) - Best for beginners
+  - Install VS Code: https://code.visualstudio.com/
+  - Install PlatformIO extension from VS Code marketplace
+  - Open the project folder in VS Code
+  - Use the PlatformIO toolbar to build and upload
+
+- **PlatformIO Core** (Command Line)
+  - Install: `pip install platformio`
+  - Build: `pio run -e esp32dev`
+  - Upload: `pio run -e esp32dev --target upload`
+  - Monitor: `pio device monitor -e esp32dev`
+
+#### Option 2: Arduino IDE
+- Download Arduino IDE 2.x: https://www.arduino.cc/en/software
+- Install ESP32 board support:
+  - Go to File → Preferences
+  - Add to "Additional Board Manager URLs": 
+    `https://raw.githubusercontent.com/espressif/arduino-esp32/gh-pages/package_esp32_index.json`
+  - Go to Tools → Board → Boards Manager
+  - Search "esp32" and install "ESP32 by Espressif Systems"
+- Install required libraries via Library Manager:
+  - NimBLE-Arduino
+  - ArduinoJson
+  - Adafruit NeoPixel
+  - Adafruit SSD1306
+  - TinyGPSPlus
+  - SdFat
+- Select board: Tools → Board → ESP32 Arduino → ESP32 Dev Module
+- Open `src/main.cpp` and upload
+
 ### Prerequisites
-- PlatformIO IDE or PlatformIO Core
-- Python 3.8+ (for web interface)
-- USB-C cable for programming
-- Oui-Spy device from [colonelpanic.tech](https://colonelpanic.tech)
+- One of the IDEs listed above (PlatformIO recommended)
+- Python 3.8+ (optional, for web interface)
+- USB cable (Micro-USB or USB-C depending on your ESP32 DevKit)
+- ESP32-WROOM-32 DevKit V4 board and components listed above
 
 ### Setup Instructions
+
+#### For ESP32-WROOM-32 DevKit V4:
 1. **Clone the repository**:
    ```bash
    git clone <repository-url>
-   cd flock-you
+   cd flock-you-wroom
    ```
 
-2. **Connect your Oui-Spy device** via USB-C
+2. **Connect your ESP32 DevKit V4** via USB
 
 3. **Flash the firmware**:
    ```bash
-   pio run --target upload
+   pio run -e esp32dev --target upload
    ```
 
-4. **Set up the web interface**:
+4. **Monitor serial output**:
+   ```bash
+   pio device monitor -e esp32dev
+   ```
+
+#### For Xiao ESP32 S3 / Oui-Spy Device:
+1. **Clone the repository**:
+   ```bash
+   git clone <repository-url>
+   cd flock-you-wroom
+   ```
+
+2. **Connect your device** via USB-C
+
+3. **Flash the firmware**:
+   ```bash
+   pio run -e xiao_esp32s3 --target upload
+   ```
+
+4. **Monitor serial output**:
+   ```bash
+   pio device monitor -e xiao_esp32s3
+   ```
+
+#### Web Interface Setup (Optional):
+4. **Set up the web interface** (all platforms):
    ```bash
    cd api
    python3 -m venv venv
@@ -156,6 +355,25 @@ When a Raven device is detected, the system provides:
 
 ## Technical Specifications
 
+### ESP32-WROOM-32 DevKit V4
+- **Flash Memory**: 4MB
+- **SRAM**: 520KB
+- **PSRAM**: None
+- **WiFi**: 2.4GHz 802.11 b/g/n
+- **Bluetooth**: BLE 4.2
+- **I2C**: Hardware I2C for OLED
+- **SPI**: Hardware HSPI for SD card
+- **UART**: UART0 (USB serial), UART2 (GPS)
+- **GPIO**: 34 pins available
+- **Power**: 3.3V logic, 5V USB input
+
+### Xiao ESP32 S3
+- **Flash Memory**: 8MB
+- **PSRAM**: 8MB OPI
+- **WiFi**: 2.4GHz 802.11 b/g/n
+- **Bluetooth**: BLE 5.0
+- **USB**: Native USB CDC
+
 ### WiFi Capabilities
 - **Frequency**: 2.4GHz only (13 channels)
 - **Mode**: Promiscuous monitoring
@@ -176,7 +394,7 @@ When a Raven device is detected, the system provides:
 
 ### JSON Output Format
 
-#### WiFi Detection Example
+#### WiFi Detection Example (ESP32-WROOM-32)
 ```json
 {
   "timestamp": 12345,
@@ -190,6 +408,10 @@ When a Raven device is detected, the system provides:
   "signal_strength": "MEDIUM",
   "channel": 6,
   "mac_address": "aa:bb:cc:dd:ee:ff",
+  "gps_latitude": 34.052235,
+  "gps_longitude": -118.243683,
+  "gps_altitude": 100.5,
+  "gps_satellites": 8,
   "threat_score": 95,
   "matched_patterns": ["ssid_pattern", "mac_prefix"],
   "device_info": {
@@ -200,9 +422,11 @@ When a Raven device is detected, the system provides:
 }
 ```
 
-#### Raven BLE Detection Example (NEW)
+#### Raven BLE Detection Example (ESP32-WROOM-32)
 ```json
 {
+  "timestamp": 23456,
+  "detection_time": "23.456s",
   "protocol": "bluetooth_le",
   "detection_method": "raven_service_uuid",
   "device_type": "RAVEN_GUNSHOT_DETECTOR",
@@ -211,6 +435,10 @@ When a Raven device is detected, the system provides:
   "rssi": -72,
   "signal_strength": "MEDIUM",
   "device_name": "Raven-Device-001",
+  "gps_latitude": 34.052235,
+  "gps_longitude": -118.243683,
+  "gps_altitude": 100.5,
+  "gps_satellites": 8,
   "raven_service_uuid": "00003100-0000-1000-8000-00805f9b34fb",
   "raven_service_description": "GPS Location Service (Lat/Lon/Alt)",
   "raven_firmware_version": "1.3.x (Latest)",
@@ -230,20 +458,53 @@ When a Raven device is detected, the system provides:
 ## Usage
 
 ### Startup Sequence
+
+#### ESP32-WROOM-32 DevKit V4:
+1. **Power on** the device via USB
+2. **Watch the OLED display** show boot screen
+3. **Listen for boot beeps** and observe **blue LED fade-in** animation
+4. **Wait for initialization**:
+   - LED strip initializes (all LEDs briefly light up)
+   - OLED displays "FLOCK DETECTOR v2.0"
+   - GPS module starts acquiring satellites
+   - SD card mounts and creates log file
+5. **Check OLED status**:
+   - Status should show "SCANNING"
+   - GPS status will show "SEARCHING" then "FIX" when locked
+   - SD card shows "OK" or "ERR"
+6. **System ready** when display shows all systems initialized
+7. **Green breathing LEDs** indicate active scanning mode
+
+#### Xiao ESP32 S3 / Oui-Spy Device:
 1. **Power on** the Oui-Spy device
 2. **Listen for boot beeps** (low → high pitch)
-3. **Start the web server**: `python flockyou.py` (from the `api` directory)
-4. **Open the dashboard**: Navigate to `http://localhost:5000`
-5. **Connect devices**: Use the web interface to connect your Flock You device and GPS
+3. **Start the web server** (optional): `python flockyou.py` (from the `api` directory)
+4. **Open the dashboard** (optional): Navigate to `http://localhost:5000`
+5. **Connect devices** (optional): Use the web interface to connect your Flock You device and GPS
 6. **System ready** when "hunting for Flock Safety devices" appears in the serial terminal
 
 ### Detection Monitoring
-- **Web Dashboard**: Real-time detection display at `http://localhost:5000`
-- **Serial Terminal**: Live device output in the web interface
+
+#### ESP32-WROOM-32 DevKit V4:
+- **OLED Display**: Real-time detection count, GPS coordinates, SD status
+- **LED Indicators**: Color-coded visual feedback
+  - Green breathing: Scanning mode
+  - Blue flash: WiFi detection
+  - Purple flash: BLE detection
+  - Red flash: Flock Safety detection alert
+  - Red/white strobe: Raven gunshot detector (critical threat)
+  - Orange pulse: Heartbeat (device still in range)
+- **Audio Alerts**: Buzzer beeps for detections and heartbeat
+- **SD Card Logging**: All detections logged to CSV file with GPS coordinates
+- **Serial Output**: Full JSON detection data via USB serial
+
+#### Xiao ESP32 S3 / Oui-Spy:
+- **Web Dashboard**: Real-time detection display at `http://localhost:5000` (optional)
+- **Serial Terminal**: Live device output in the web interface or serial monitor
 - **Audio Alerts**: Immediate notification of detections (device-side)
 - **Heartbeat**: Continuous monitoring while devices in range
 - **Range Tracking**: Automatic detection of device departure
-- **Export Options**: Download detections as CSV or KML files
+- **Export Options**: Download detections as CSV or KML files (web interface)
 
 ### Channel Information
 - **WiFi**: Automatically hops through channels 1-13
@@ -284,7 +545,7 @@ When a Raven device is detected, the system provides:
 - **WiFi Range**: Limited to 2.4GHz spectrum
 - **Detection Range**: Approximately 50-100 meters depending on environment
 - **False Positives**: Possible with similar device signatures
-- **Battery Life**: Continuous scanning reduces battery runtime
+- **Power**: USB-powered operation (portable battery packs can be used)
 
 ### Environmental Factors
 - **Interference**: Other WiFi networks may affect detection
@@ -293,10 +554,32 @@ When a Raven device is detected, the system provides:
 
 ## Troubleshooting
 
-### Common Issues
+### Common Issues - ESP32-WROOM-32 DevKit V4
+1. **OLED Not Working**: 
+   - Check I2C connections (SDA=GPIO21, SCL=GPIO22)
+   - Verify I2C address is 0x3C
+   - Try scanning I2C bus: `Wire.begin(); Wire.beginTransmission(0x3C);`
+2. **GPS Not Getting Fix**: 
+   - Ensure GPS module has clear view of sky
+   - Wait 1-5 minutes for initial fix (cold start)
+   - Check UART connections (RX=GPIO16, TX=GPIO17)
+3. **SD Card Not Detected**:
+   - Check SPI connections (CS=GPIO15, MOSI=GPIO13, MISO=GPIO12, SCK=GPIO14)
+   - Ensure SD card is formatted as FAT32
+   - Try lower SPI speed: `SD_SCK_MHZ(1)` instead of `SD_SCK_MHZ(4)`
+4. **LEDs Not Working**:
+   - Check data connection to GPIO5
+   - Ensure 5V power supply is adequate (4 LEDs need ~240mA max)
+   - Verify LED strip type (NEO_GRB + NEO_KHZ800)
+5. **Active Buzzer Always On/Off**:
+   - Verify buzzer is 5V active type (not passive/PWM)
+   - Check connection to GPIO23
+   - Test with simple digitalWrite HIGH/LOW
+
+### Common Issues - All Platforms
 1. **Web Server Won't Start**: Check Python version (3.8+) and virtual environment setup
 2. **No Serial Output**: Check USB connection and device port selection in web interface
-3. **No Audio**: Verify buzzer connection to GPIO3
+3. **No Audio**: Verify buzzer connection to correct GPIO pin
 4. **No Detections**: Ensure device is in range and scanning is active
 5. **False Alerts**: Review detection patterns and adjust if needed
 6. **Connection Issues**: Verify device is connected via the web interface controls

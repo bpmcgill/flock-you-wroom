@@ -10,22 +10,40 @@
 #include <stdint.h>
 #include "esp_wifi.h"
 #include "esp_wifi_types.h"
+#include <Adafruit_NeoPixel.h>
+#include <Wire.h>
+#include <Adafruit_SSD1306.h>
+#include <TinyGPSPlus.h>
+#include <SPI.h>
+#include <SdFat.h>
 
 // ============================================================================
 // CONFIGURATION
 // ============================================================================
 
-// Hardware Configuration
-#define BUZZER_PIN 3  // GPIO3 (D2) - PWM capable pin on Xiao ESP32 S3
+// Pin Definitions for ESP32 DevKit V4
+#define LED_PIN 5          // WS2812B LED strip data pin
+#define LED_COUNT 4        // Number of WS2812B LEDs
+#define BUZZER_PIN 23      // Active buzzer (2-pin 5V)
+#define OLED_SDA 21        // I2C Data for SSD1315 OLED
+#define OLED_SCL 22        // I2C Clock for SSD1315 OLED
+#define GPS_RX 16          // UART2 RX (GPS TX)
+#define GPS_TX 17          // UART2 TX (GPS RX)
+#define SD_CS 15           // SD Card Chip Select
+#define SD_MOSI 13         // SD Card MOSI (HSPI)
+#define SD_MISO 12         // SD Card MISO (HSPI)
+#define SD_SCK 14          // SD Card Clock (HSPI)
 
-// Audio Configuration
-#define LOW_FREQ 200      // Boot sequence - low pitch
-#define HIGH_FREQ 800     // Boot sequence - high pitch & detection alert
-#define DETECT_FREQ 1000  // Detection alert - high pitch (faster beeps)
-#define HEARTBEAT_FREQ 600 // Heartbeat pulse frequency
-#define BOOT_BEEP_DURATION 300   // Boot beep duration
-#define DETECT_BEEP_DURATION 150 // Detection beep duration (faster)
-#define HEARTBEAT_DURATION 100   // Short heartbeat pulse
+// OLED Configuration
+#define SCREEN_WIDTH 128
+#define SCREEN_HEIGHT 64
+#define OLED_RESET -1
+#define OLED_ADDRESS 0x3C
+
+// Audio Configuration (for active buzzer - simple on/off)
+#define BOOT_BEEP_DURATION 300
+#define DETECT_BEEP_DURATION 150
+#define HEARTBEAT_DURATION 100
 
 // WiFi Promiscuous Mode Configuration
 #define MAX_CHANNEL 13
@@ -135,35 +153,137 @@ static unsigned long last_detection_time = 0;
 static unsigned long last_heartbeat = 0;
 static NimBLEScan* pBLEScan;
 
+// Hardware Objects
+Adafruit_NeoPixel strip(LED_COUNT, LED_PIN, NEO_GRB + NEO_KHZ800);
+Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
+TinyGPSPlus gps;
+HardwareSerial gpsSerial(2); // UART2
+SdFat sd;
+SdFile logFile;
+
+// Detection counters
+static int wifi_detection_count = 0;
+static int ble_detection_count = 0;
+static int total_detection_count = 0;
+static unsigned long last_display_update = 0;
+
 
 
 // ============================================================================
-// AUDIO SYSTEM
+// LED SYSTEM
 // ============================================================================
 
-void beep(int frequency, int duration_ms)
-{
-    tone(BUZZER_PIN, frequency, duration_ms);
-    delay(duration_ms + 50);
-}
+// LED Color definitions
+#define COLOR_OFF strip.Color(0, 0, 0)
+#define COLOR_BLUE strip.Color(0, 0, 255)
+#define COLOR_GREEN strip.Color(0, 255, 0)
+#define COLOR_RED strip.Color(255, 0, 0)
+#define COLOR_ORANGE strip.Color(255, 165, 0)
+#define COLOR_PURPLE strip.Color(128, 0, 128)
+#define COLOR_WHITE strip.Color(255, 255, 255)
 
-void boot_beep_sequence()
-{
-    printf("Initializing audio system...\n");
-    printf("Playing boot sequence: Low -> High pitch\n");
-    beep(LOW_FREQ, BOOT_BEEP_DURATION);
-    beep(HIGH_FREQ, BOOT_BEEP_DURATION);
-    printf("Audio system ready\n\n");
-}
-
-void flock_detected_beep_sequence()
-{
-    printf("FLOCK SAFETY DEVICE DETECTED!\n");
-    printf("Playing alert sequence: 3 fast high-pitch beeps\n");
-    for (int i = 0; i < 3; i++) {
-        beep(DETECT_FREQ, DETECT_BEEP_DURATION);
-        if (i < 2) delay(50); // Short gap between beeps
+void setAllLEDs(uint32_t color) {
+    for (int i = 0; i < LED_COUNT; i++) {
+        strip.setPixelColor(i, color);
     }
+    strip.show();
+}
+
+void ledFadeIn(uint32_t color, int duration) {
+    for (int brightness = 0; brightness <= 50; brightness += 5) {
+        strip.setBrightness(brightness);
+        setAllLEDs(color);
+        delay(duration / 10);
+    }
+    strip.setBrightness(50);
+}
+
+void ledFlash(uint32_t color, int count, int duration) {
+    for (int i = 0; i < count; i++) {
+        setAllLEDs(color);
+        delay(duration);
+        setAllLEDs(COLOR_OFF);
+        if (i < count - 1) delay(duration);
+    }
+}
+
+void ledPulse(uint32_t color, int duration) {
+    // Breathing effect
+    for (int brightness = 10; brightness <= 50; brightness += 5) {
+        strip.setBrightness(brightness);
+        setAllLEDs(color);
+        delay(duration / 16);
+    }
+    for (int brightness = 50; brightness >= 10; brightness -= 5) {
+        strip.setBrightness(brightness);
+        setAllLEDs(color);
+        delay(duration / 16);
+    }
+    strip.setBrightness(50);
+    setAllLEDs(COLOR_OFF);
+}
+
+void scanningLEDEffect() {
+    static unsigned long lastPulse = 0;
+    static bool pulsing = false;
+    
+    if (!pulsing && millis() - lastPulse > 3000) {
+        pulsing = true;
+        ledPulse(COLOR_GREEN, 500);
+        pulsing = false;
+        lastPulse = millis();
+    }
+}
+
+void ravenDetectionStrobe() {
+    // Red and white strobe for critical threat
+    for (int i = 0; i < 5; i++) {
+        setAllLEDs(COLOR_RED);
+        delay(100);
+        setAllLEDs(COLOR_WHITE);
+        delay(100);
+    }
+    setAllLEDs(COLOR_OFF);
+}
+
+// ============================================================================
+// ACTIVE BUZZER SYSTEM
+// ============================================================================
+
+void activeBuzzerBeep(int count, int duration, int gap) {
+    for (int i = 0; i < count; i++) {
+        digitalWrite(BUZZER_PIN, HIGH);
+        delay(duration);
+        digitalWrite(BUZZER_PIN, LOW);
+        if (i < count - 1) delay(gap);
+    }
+}
+
+void boot_beep_sequence() {
+    printf("Initializing audio system...\n");
+    printf("Playing boot sequence\n");
+    
+    // Blue LED fade-in animation
+    ledFadeIn(COLOR_BLUE, 500);
+    delay(200);
+    setAllLEDs(COLOR_OFF);
+    
+    // Two beeps
+    activeBuzzerBeep(2, BOOT_BEEP_DURATION, 100);
+    
+    printf("Audio and LED system ready\n\n");
+}
+
+void flock_detected_beep_sequence() {
+    printf("FLOCK SAFETY DEVICE DETECTED!\n");
+    printf("Playing alert sequence: 3 fast beeps + LED flash\n");
+    
+    // Red LED flash
+    ledFlash(COLOR_RED, 3, DETECT_BEEP_DURATION);
+    
+    // Three fast beeps
+    activeBuzzerBeep(3, DETECT_BEEP_DURATION, 50);
+    
     printf("Detection complete - device identified!\n\n");
     
     // Mark device as in range and start heartbeat tracking
@@ -172,12 +292,195 @@ void flock_detected_beep_sequence()
     last_heartbeat = millis();
 }
 
-void heartbeat_pulse()
-{
+void heartbeat_pulse() {
     printf("Heartbeat: Device still in range\n");
-    beep(HEARTBEAT_FREQ, HEARTBEAT_DURATION);
-    delay(100);
-    beep(HEARTBEAT_FREQ, HEARTBEAT_DURATION);
+    
+    // Orange LED pulse
+    ledPulse(COLOR_ORANGE, 400);
+    
+    // Two beeps
+    activeBuzzerBeep(2, HEARTBEAT_DURATION, 100);
+}
+
+// ============================================================================
+// GPS SYSTEM
+// ============================================================================
+
+void updateGPS() {
+    while (gpsSerial.available() > 0) {
+        gps.encode(gpsSerial.read());
+    }
+}
+
+String getGPSLocation() {
+    if (gps.location.isValid()) {
+        return String(gps.location.lat(), 6) + "," + String(gps.location.lng(), 6);
+    }
+    return "NO_FIX";
+}
+
+String getGPSStatus() {
+    if (gps.location.isValid()) {
+        return "FIX";
+    } else if (gps.satellites.value() > 0) {
+        return "SEARCHING";
+    }
+    return "NO_GPS";
+}
+
+// ============================================================================
+// SD CARD LOGGING
+// ============================================================================
+
+bool sd_initialized = false;
+
+void initSDCard() {
+    printf("Initializing SD card...\n");
+    
+    if (!sd.begin(SD_CS, SD_SCK_MHZ(4))) {
+        printf("SD card initialization failed!\n");
+        sd_initialized = false;
+        return;
+    }
+    
+    printf("SD card initialized successfully\n");
+    sd_initialized = true;
+    
+    // Create log file
+    char filename[32];
+    sprintf(filename, "flock_%lu.csv", millis());
+    
+    if (logFile.open(filename, O_WRONLY | O_CREAT | O_TRUNC)) {
+        // Write CSV header
+        logFile.println("timestamp,protocol,detection_method,mac_address,rssi,ssid,device_name,gps_lat,gps_lon");
+        logFile.close();
+        printf("Created log file: %s\n", filename);
+    } else {
+        printf("Failed to create log file\n");
+    }
+}
+
+void logDetectionToSD(const char* protocol, const char* method, const char* mac, 
+                      int rssi, const char* ssid, const char* name) {
+    if (!sd_initialized) return;
+    
+    // Create unique filename based on timestamp
+    // Format: flock_YYYYMMDD.csv (one file per day)
+    char filename[32];
+    unsigned long hours = millis() / 3600000;  // Hours since boot
+    sprintf(filename, "flock_%lu.csv", hours / 24);  // One file per day
+    
+    if (logFile.open(filename, O_WRONLY | O_CREAT | O_APPEND)) {
+        logFile.print(millis());
+        logFile.print(",");
+        logFile.print(protocol);
+        logFile.print(",");
+        logFile.print(method);
+        logFile.print(",");
+        logFile.print(mac);
+        logFile.print(",");
+        logFile.print(rssi);
+        logFile.print(",");
+        logFile.print(ssid ? ssid : "");
+        logFile.print(",");
+        logFile.print(name ? name : "");
+        logFile.print(",");
+        if (gps.location.isValid()) {
+            logFile.print(gps.location.lat(), 6);
+            logFile.print(",");
+            logFile.print(gps.location.lng(), 6);
+        } else {
+            logFile.print(",");
+        }
+        logFile.println();
+        logFile.close();
+    }
+}
+
+// ============================================================================
+// OLED DISPLAY SYSTEM
+// ============================================================================
+
+void displayBootScreen() {
+    display.clearDisplay();
+    display.setTextSize(1);
+    display.setTextColor(SSD1306_WHITE);
+    display.setCursor(0, 0);
+    display.println(F("FLOCK DETECTOR v2.0"));
+    display.println(F(""));
+    display.println(F("ESP32-WROOM-32"));
+    display.println(F("DevKit V4"));
+    display.println(F(""));
+    display.println(F("Initializing..."));
+    display.display();
+}
+
+void updateDisplay() {
+    display.clearDisplay();
+    display.setTextSize(1);
+    display.setTextColor(SSD1306_WHITE);
+    
+    // Header
+    display.setCursor(0, 0);
+    display.println(F("FLOCK DETECTOR v2.0"));
+    
+    // Status
+    display.print(F("Status: "));
+    if (device_in_range) {
+        display.println(F("DETECTED!"));
+    } else {
+        display.println(F("SCANNING"));
+    }
+    
+    // Detection counts
+    display.print(F("Detections: "));
+    display.println(total_detection_count);
+    display.print(F("WiFi: "));
+    display.print(wifi_detection_count);
+    display.print(F("  BLE: "));
+    display.println(ble_detection_count);
+    
+    // GPS status
+    display.print(F("GPS: "));
+    if (gps.location.isValid()) {
+        display.print(gps.location.lat(), 2);
+        display.print(F(","));
+        display.println(gps.location.lng(), 2);
+    } else {
+        display.println(getGPSStatus());
+    }
+    
+    // SD status
+    display.print(F("SD: "));
+    display.println(sd_initialized ? F("OK") : F("ERR"));
+    
+    display.display();
+}
+
+void displayDetection(const char* deviceType, int rssi) {
+    display.clearDisplay();
+    display.setTextSize(2);
+    display.setTextColor(SSD1306_WHITE);
+    display.setCursor(0, 0);
+    display.println(F("ALERT!"));
+    
+    display.setTextSize(1);
+    display.println(F(""));
+    display.print(F("Type: "));
+    display.println(deviceType);
+    display.print(F("RSSI: "));
+    display.print(rssi);
+    display.println(F(" dBm"));
+    
+    if (gps.location.isValid()) {
+        display.print(F("GPS: "));
+        display.print(gps.location.lat(), 2);
+        display.print(F(","));
+        display.println(gps.location.lng(), 2);
+    }
+    
+    display.display();
+    delay(2000); // Show alert for 2 seconds
 }
 
 // ============================================================================
@@ -213,6 +516,16 @@ void output_wifi_detection_json(const char* ssid, const uint8_t* mac, int rssi, 
     snprintf(mac_prefix, sizeof(mac_prefix), "%02x:%02x:%02x", mac[0], mac[1], mac[2]);
     doc["mac_prefix"] = mac_prefix;
     doc["vendor_oui"] = mac_prefix;
+    
+    // GPS data
+    if (gps.location.isValid()) {
+        doc["gps_latitude"] = gps.location.lat();
+        doc["gps_longitude"] = gps.location.lng();
+        doc["gps_altitude"] = gps.altitude.meters();
+        doc["gps_satellites"] = gps.satellites.value();
+    } else {
+        doc["gps_status"] = getGPSStatus();
+    }
     
     // Detection pattern matching
     bool ssid_match = false;
@@ -252,6 +565,16 @@ void output_wifi_detection_json(const char* ssid, const uint8_t* mac, int rssi, 
     String json_output;
     serializeJson(doc, json_output);
     Serial.println(json_output);
+    
+    // Log to SD card
+    logDetectionToSD("wifi", detection_type, mac_str, rssi, ssid, nullptr);
+    
+    // Update counters
+    wifi_detection_count++;
+    total_detection_count++;
+    
+    // Show LED color for WiFi detection
+    ledFlash(COLOR_BLUE, 1, 200);
 }
 
 void output_ble_detection_json(const char* mac, const char* name, int rssi, const char* detection_method)
@@ -288,6 +611,16 @@ void output_ble_detection_json(const char* mac, const char* name, int rssi, cons
     mac_prefix[8] = '\0';
     doc["mac_prefix"] = mac_prefix;
     doc["vendor_oui"] = mac_prefix;
+    
+    // GPS data
+    if (gps.location.isValid()) {
+        doc["gps_latitude"] = gps.location.lat();
+        doc["gps_longitude"] = gps.location.lng();
+        doc["gps_altitude"] = gps.altitude.meters();
+        doc["gps_satellites"] = gps.satellites.value();
+    } else {
+        doc["gps_status"] = getGPSStatus();
+    }
     
     // Detection pattern matching
     bool name_match = false;
@@ -337,6 +670,16 @@ void output_ble_detection_json(const char* mac, const char* name, int rssi, cons
     String json_output;
     serializeJson(doc, json_output);
     Serial.println(json_output);
+    
+    // Log to SD card
+    logDetectionToSD("ble", detection_method, mac, rssi, nullptr, name);
+    
+    // Update counters
+    ble_detection_count++;
+    total_detection_count++;
+    
+    // Show LED color for BLE detection
+    ledFlash(COLOR_PURPLE, 1, 200);
 }
 
 // ============================================================================
@@ -602,7 +945,14 @@ class AdvertisedDeviceCallbacks: public NimBLEAdvertisedDeviceCallbacks {
             const char* service_desc = get_raven_service_description(detected_service_uuid);
             
             // Create enhanced JSON output with Raven-specific data
-            StaticJsonDocument<1024> doc;
+            // Using DynamicJsonDocument(2048) instead of StaticJsonDocument<1024> because:
+            // - Raven devices advertise multiple service UUIDs (typically 6-8)
+            // - Each UUID is 36 characters + JSON overhead
+            // - GPS data adds ~200 bytes
+            // - Service array can exceed 500 bytes alone
+            DynamicJsonDocument doc(2048);
+            doc["timestamp"] = millis();
+            doc["detection_time"] = String(millis() / 1000.0, 3) + "s";
             doc["protocol"] = "bluetooth_le";
             doc["detection_method"] = "raven_service_uuid";
             doc["device_type"] = "RAVEN_GUNSHOT_DETECTOR";
@@ -613,6 +963,16 @@ class AdvertisedDeviceCallbacks: public NimBLEAdvertisedDeviceCallbacks {
             
             if (!name.empty()) {
                 doc["device_name"] = name.c_str();
+            }
+            
+            // GPS data
+            if (gps.location.isValid()) {
+                doc["gps_latitude"] = gps.location.lat();
+                doc["gps_longitude"] = gps.location.lng();
+                doc["gps_altitude"] = gps.altitude.meters();
+                doc["gps_satellites"] = gps.satellites.value();
+            } else {
+                doc["gps_status"] = getGPSStatus();
             }
             
             // Raven-specific information
@@ -635,6 +995,16 @@ class AdvertisedDeviceCallbacks: public NimBLEAdvertisedDeviceCallbacks {
             // Output the detection
             serializeJson(doc, Serial);
             Serial.println();
+            
+            // Log to SD card
+            logDetectionToSD("ble", "raven_service_uuid", addrStr.c_str(), rssi, nullptr, name.c_str());
+            
+            // Update counters
+            ble_detection_count++;
+            total_detection_count++;
+            
+            // Special LED strobe for Raven (critical threat)
+            ravenDetectionStrobe();
             
             if (!triggered) {
                 triggered = true;
@@ -674,12 +1044,45 @@ void setup()
     Serial.begin(115200);
     delay(1000);
     
-    // Initialize buzzer
+    printf("Starting Flock You Enhanced Detection System v2.0...\n");
+    printf("ESP32-WROOM-32 DevKit V4\n\n");
+    
+    // Initialize LED strip
+    strip.begin();
+    strip.setBrightness(50);
+    strip.show();
+    printf("LED strip initialized (4x WS2812B)\n");
+    
+    // Initialize active buzzer
     pinMode(BUZZER_PIN, OUTPUT);
     digitalWrite(BUZZER_PIN, LOW);
+    printf("Active buzzer initialized\n");
+    
+    // Initialize I2C for OLED
+    Wire.begin(OLED_SDA, OLED_SCL);
+    printf("I2C initialized (SDA:%d, SCL:%d)\n", OLED_SDA, OLED_SCL);
+    
+    // Initialize OLED display
+    if (!display.begin(SSD1306_SWITCHCAPVCC, OLED_ADDRESS)) {
+        printf("SSD1306 allocation failed!\n");
+    } else {
+        printf("OLED display initialized (128x64)\n");
+        displayBootScreen();
+    }
+    
+    // Initialize GPS
+    gpsSerial.begin(9600, SERIAL_8N1, GPS_RX, GPS_TX);
+    printf("GPS initialized on UART2 (RX:%d, TX:%d)\n", GPS_RX, GPS_TX);
+    
+    // Initialize SD card
+    SPI.begin(SD_SCK, SD_MISO, SD_MOSI, SD_CS);
+    printf("SPI initialized for SD card\n");
+    initSDCard();
+    
+    // Boot sequence (LED + buzzer + display)
     boot_beep_sequence();
     
-    printf("Starting Flock Squawk Enhanced Detection System...\n\n");
+    printf("\nInitializing wireless systems...\n");
     
     // Initialize WiFi in promiscuous mode
     WiFi.mode(WIFI_STA);
@@ -703,15 +1106,32 @@ void setup()
     pBLEScan->setWindow(99);
     
     printf("BLE scanner initialized\n");
-    printf("System ready - hunting for Flock Safety devices...\n\n");
+    printf("\n========================================\n");
+    printf("System ready - hunting for Flock Safety devices...\n");
+    printf("========================================\n\n");
     
     last_channel_hop = millis();
+    last_display_update = millis();
 }
 
 void loop()
 {
+    // Update GPS data
+    updateGPS();
+    
     // Handle channel hopping for WiFi promiscuous mode
     hop_channel();
+    
+    // Update OLED display periodically
+    if (millis() - last_display_update > 1000) {
+        updateDisplay();
+        last_display_update = millis();
+    }
+    
+    // Update LED breathing effect when scanning (not in detection mode)
+    if (!device_in_range) {
+        scanningLEDEffect();
+    }
     
     // Handle heartbeat pulse if device is in range
     if (device_in_range) {
@@ -731,6 +1151,7 @@ void loop()
         }
     }
     
+    // Handle BLE scanning
     if (millis() - last_ble_scan >= BLE_SCAN_INTERVAL && !pBLEScan->isScanning()) {
         printf("[BLE] scan...\n");
         pBLEScan->start(BLE_SCAN_DURATION, false);
