@@ -307,16 +307,25 @@ void heartbeat_pulse() {
 // BATTERY MONITORING
 // ============================================================================
 
+// Battery voltage constants (18650 Li-ion)
+#define BATTERY_MAX_VOLTAGE 4.2  // Fully charged
+#define BATTERY_MIN_VOLTAGE 3.0  // Empty/cutoff
+#define BATTERY_MAX_VOLTAGE_X10 42  // 4.2V * 10
+#define BATTERY_MIN_VOLTAGE_X10 30  // 3.0V * 10
+
 float getBatteryVoltage() {
     int raw = analogRead(BATTERY_PIN);
-    // Assuming voltage divider: (raw / 4095.0) * 3.3V * 2
+    // Voltage divider circuit: 10kΩ/10kΩ from battery positive to GND
+    // Formula: (ADC_value / 4095) * 3.3V * 2 (for 1:1 voltage divider)
+    // Adjust multiplier if using different resistor values
     return (raw / 4095.0) * 3.3 * 2.0;
 }
 
 int getBatteryPercentage() {
     float voltage = getBatteryVoltage();
-    // 18650 battery: 4.2V full, 3.0V empty
-    int percentage = map((int)(voltage * 10), 30, 42, 0, 100);
+    // Map voltage range to 0-100% for 18650 Li-ion battery
+    // 4.2V = 100%, 3.0V = 0%
+    int percentage = map((int)(voltage * 10), BATTERY_MIN_VOLTAGE_X10, BATTERY_MAX_VOLTAGE_X10, 0, 100);
     return constrain(percentage, 0, 100);
 }
 
@@ -382,8 +391,11 @@ void logDetectionToSD(const char* protocol, const char* method, const char* mac,
                       int rssi, const char* ssid, const char* name) {
     if (!sd_initialized) return;
     
+    // Create unique filename based on timestamp
+    // Format: flock_YYYYMMDD.csv (one file per day)
     char filename[32];
-    sprintf(filename, "flock_%lu.csv", millis() / 1000000); // Group by million ms chunks
+    unsigned long hours = millis() / 3600000;  // Hours since boot
+    sprintf(filename, "flock_%lu.csv", hours / 24);  // One file per day
     
     if (logFile.open(filename, O_WRONLY | O_CREAT | O_APPEND)) {
         logFile.print(millis());
@@ -971,6 +983,12 @@ class AdvertisedDeviceCallbacks: public NimBLEAdvertisedDeviceCallbacks {
             const char* service_desc = get_raven_service_description(detected_service_uuid);
             
             // Create enhanced JSON output with Raven-specific data
+            // Using DynamicJsonDocument(2048) instead of StaticJsonDocument<1024> because:
+            // - Raven devices advertise multiple service UUIDs (typically 6-8)
+            // - Each UUID is 36 characters + JSON overhead
+            // - GPS data adds ~200 bytes
+            // - Battery data adds ~100 bytes
+            // - Service array can exceed 500 bytes alone
             DynamicJsonDocument doc(2048);
             doc["timestamp"] = millis();
             doc["detection_time"] = String(millis() / 1000.0, 3) + "s";
