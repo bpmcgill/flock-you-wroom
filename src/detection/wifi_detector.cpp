@@ -4,10 +4,15 @@
 #include "hardware/buzzer.h"
 #include "hardware/gps_manager.h"
 #include "hardware/sd_logger.h"
+#include "hardware/data_manager.h"
+#include "config/settings.h"
 #include <ArduinoJson.h>
 #include <string.h>
 
 WiFiDetector wifiDetector;
+
+// Priority channels (non-overlapping 2.4GHz channels)
+const uint8_t WiFiDetector::PRIORITY_CHANNELS[3] = {1, 6, 11};
 
 // WiFi frame structures
 typedef struct {
@@ -43,14 +48,33 @@ void WiFiDetector::begin() {
 void WiFiDetector::hopChannel() {
     unsigned long now = millis();
     if (now - lastChannelHop > CHANNEL_HOP_INTERVAL) {
+        // Always do sequential scanning to ensure we hit all channels
         currentChannel++;
         if (currentChannel > MAX_CHANNEL) {
             currentChannel = 1;
+            channelCycleCount++;
         }
+        
+        // When idle (no recent detections), spend extra time on priority channels
+        // by revisiting them after each full cycle
+        if (now - lastDetection > 10000 && channelCycleCount > 0) {
+            // Every other hop, use a priority channel for extra coverage
+            static bool usePriority = false;
+            if (usePriority) {
+                currentChannel = PRIORITY_CHANNELS[priorityChannelIdx];
+                priorityChannelIdx = (priorityChannelIdx + 1) % 3;
+            }
+            usePriority = !usePriority;
+        }
+        
         esp_wifi_set_channel(currentChannel, WIFI_SECOND_CHAN_NONE);
         lastChannelHop = now;
         printf("[WiFi] Hopped to channel %d\n", currentChannel);
     }
+}
+
+void WiFiDetector::recordDetection() {
+    lastDetection = millis();
 }
 
 bool WiFiDetector::checkMacPrefix(const uint8_t* mac) {
@@ -81,6 +105,12 @@ void wifi_sniffer_packet_handler(void* buff, wifi_promiscuous_pkt_type_t type) {
     const wifi_ieee80211_packet_t *ipkt = (wifi_ieee80211_packet_t *)ppkt->payload;
     const wifi_ieee80211_mac_hdr_t *hdr = &ipkt->hdr;
     
+    // Filter out weak signals (likely too far or noise)
+    const int RSSI_THRESHOLD = -85;
+    if (ppkt->rx_ctrl.rssi < RSSI_THRESHOLD) {
+        return;
+    }
+    
     uint8_t frame_type = (hdr->frame_ctrl & 0xFF) >> 2;
     if (frame_type != 0x20 && frame_type != 0x80) {
         return;
@@ -105,8 +135,33 @@ void wifi_sniffer_packet_handler(void* buff, wifi_promiscuous_pkt_type_t type) {
         const char* detection_type = (frame_type == 0x20) ? "probe_request" : "beacon";
         outputWiFiDetectionJSON(ssid, hdr->addr2, ppkt->rx_ctrl.rssi, detection_type, wifiDetector.getCurrentChannel());
         
+        wifiDetector.recordDetection();  // Track detection for adaptive hopping
+        
+        // Record in database and check if known device
+        char mac_str[18];
+        snprintf(mac_str, sizeof(mac_str), "%02x:%02x:%02x:%02x:%02x:%02x",
+                 hdr->addr2[0], hdr->addr2[1], hdr->addr2[2], 
+                 hdr->addr2[3], hdr->addr2[4], hdr->addr2[5]);
+        
+        HardwareConfig& hw = settingsManager.getHardware();
+        
+        double lat = (hw.enable_gps && gpsManager.isValid()) ? gpsManager.latitude() : 0.0;
+        double lon = (hw.enable_gps && gpsManager.isValid()) ? gpsManager.longitude() : 0.0;
+        bool isKnown = false;
+        
+        if (hw.enable_sd_card) {
+            isKnown = dataManager.recordDetection(mac_str, "WiFi", ppkt->rx_ctrl.rssi, lat, lon);
+        }
+        
         if (!detectionState.triggered) {
-            buzzer.detectionAlert();
+            if (isKnown) {
+                // Known device - less urgent alert
+                if (hw.enable_leds) LED.knownDeviceAlert();
+                if (hw.enable_buzzer) buzzer.knownDeviceBeep();
+            } else {
+                // New device - full alert
+                if (hw.enable_buzzer || hw.enable_leds) buzzer.detectionAlert();
+            }
         }
         detectionState.recordDetection(true);
         return;
@@ -118,8 +173,31 @@ void wifi_sniffer_packet_handler(void* buff, wifi_promiscuous_pkt_type_t type) {
         outputWiFiDetectionJSON(ssid[0] ? ssid : "hidden", hdr->addr2, ppkt->rx_ctrl.rssi, 
                                detection_type, wifiDetector.getCurrentChannel());
         
+        wifiDetector.recordDetection();  // Track detection for adaptive hopping
+        
+        // Record in database and check if known device
+        char mac_str[18];
+        snprintf(mac_str, sizeof(mac_str), "%02x:%02x:%02x:%02x:%02x:%02x",
+                 hdr->addr2[0], hdr->addr2[1], hdr->addr2[2], 
+                 hdr->addr2[3], hdr->addr2[4], hdr->addr2[5]);
+        
+        HardwareConfig& hw = settingsManager.getHardware();
+        
+        double lat = (hw.enable_gps && gpsManager.isValid()) ? gpsManager.latitude() : 0.0;
+        double lon = (hw.enable_gps && gpsManager.isValid()) ? gpsManager.longitude() : 0.0;
+        bool isKnown = false;
+        
+        if (hw.enable_sd_card) {
+            isKnown = dataManager.recordDetection(mac_str, "WiFi", ppkt->rx_ctrl.rssi, lat, lon);
+        }
+        
         if (!detectionState.triggered) {
-            buzzer.detectionAlert();
+            if (isKnown) {
+                if (hw.enable_leds) LED.knownDeviceAlert();
+                if (hw.enable_buzzer) buzzer.knownDeviceBeep();
+            } else {
+                if (hw.enable_buzzer || hw.enable_leds) buzzer.detectionAlert();
+            }
         }
         detectionState.recordDetection(true);
         return;

@@ -43,10 +43,10 @@
 
 // WiFi Configuration
 #define MAX_CHANNEL             13
-#define CHANNEL_HOP_INTERVAL    500     // milliseconds
+#define CHANNEL_HOP_INTERVAL    200     // milliseconds - faster hopping for better coverage
 
 // BLE Configuration
-#define BLE_SCAN_DURATION       1       // Seconds
-#define BLE_SCAN_INTERVAL       5000    // Milliseconds between scans
+#define BLE_SCAN_DURATION       5       // Seconds - longer scans catch more devices
+#define BLE_SCAN_INTERVAL       100     // Milliseconds between scans - near-continuous scanning
 
 #endif // PINS_H

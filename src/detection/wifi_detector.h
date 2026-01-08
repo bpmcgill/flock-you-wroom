@@ -12,6 +12,7 @@ class WiFiDetector {
 public:
     void begin();
     void hopChannel();
+    void recordDetection();
     uint8_t getCurrentChannel() { return currentChannel; }
     
     // Detection helpers
@@ -21,6 +22,10 @@ public:
 private:
     uint8_t currentChannel = 1;
     unsigned long lastChannelHop = 0;
+    uint8_t priorityChannelIdx = 0;
+    unsigned long lastDetection = 0;
+    uint8_t channelCycleCount = 0;  // Track full channel scans
+    static const uint8_t PRIORITY_CHANNELS[3];
 };
 
 extern WiFiDetector wifiDetector;
