@@ -1,0 +1,40 @@
+{
+  "hardware": {
+    "enable_gps": true,
+    "enable_leds": true,
+    "enable_buzzer": true,
+    "buzzer_is_passive": false,
+    "enable_oled": true,
+    "enable_sd_card": true,
+    "led_mode": 0,
+    "led_brightness": 50,
+    "led0_function": 1,
+    "led1_function": 2,
+    "led2_function": 3,
+    "led3_function": 4
+  },
+  "scan": {
+    "channel_hop_interval": 200,
+    "ble_scan_duration": 5,
+    "ble_scan_interval": 100,
+    "rssi_threshold": -85,
+    "detection_cooldown": 2000
+  },
+  "audio": {
+    "boot_beep_duration": 300,
+    "detect_beep_duration": 150,
+    "heartbeat_duration": 100,
+    "enable_audio": true
+  },
+  "display": {
+    "show_gps": true,
+    "show_rssi": true,
+    "brightness": 255,
+    "update_interval": 1000
+  },
+  "log": {
+    "verbose_logging": false,
+    "flush_interval": 30000,
+    "auto_export": false
+  }
+}

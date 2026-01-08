@@ -5,6 +5,8 @@
 #include "hardware/buzzer.h"
 #include "hardware/gps_manager.h"
 #include "hardware/sd_logger.h"
+#include "hardware/data_manager.h"
+#include "config/settings.h"
 #include <ArduinoJson.h>
 #include <string.h>
 
@@ -30,8 +32,24 @@ class AdvertisedDeviceCallbacks : public NimBLEAdvertisedDeviceCallbacks {
         if (RavenDetector::checkServiceUUID(advertisedDevice)) {
             RavenDetector::outputDetectionJSON(advertisedDevice, addrStr.c_str(), name.c_str(), rssi);
             
+            HardwareConfig& hw = settingsManager.getHardware();
+            
+            // Record in database
+            double lat = (hw.enable_gps && gpsManager.isValid()) ? gpsManager.latitude() : 0.0;
+            double lon = (hw.enable_gps && gpsManager.isValid()) ? gpsManager.longitude() : 0.0;
+            bool isKnown = false;
+            
+            if (hw.enable_sd_card) {
+                isKnown = dataManager.recordDetection(addrStr.c_str(), "Raven", rssi, lat, lon);
+            }
+            
             if (!detectionState.triggered) {
-                buzzer.detectionAlert();
+                if (isKnown) {
+                    if (hw.enable_leds) LED.knownDeviceAlert();
+                    if (hw.enable_buzzer) buzzer.knownDeviceBeep();
+                } else {
+                    if (hw.enable_buzzer || hw.enable_leds) buzzer.detectionAlert();
+                }
             }
             detectionState.recordDetection(false);
             return;
@@ -41,8 +59,24 @@ class AdvertisedDeviceCallbacks : public NimBLEAdvertisedDeviceCallbacks {
         if (BLEDetector::checkMacPrefix(mac)) {
             outputBLEDetectionJSON(addrStr.c_str(), name.c_str(), rssi, "mac_prefix");
             
+            HardwareConfig& hw = settingsManager.getHardware();
+            
+            // Record in database
+            double lat = (hw.enable_gps && gpsManager.isValid()) ? gpsManager.latitude() : 0.0;
+            double lon = (hw.enable_gps && gpsManager.isValid()) ? gpsManager.longitude() : 0.0;
+            bool isKnown = false;
+            
+            if (hw.enable_sd_card) {
+                isKnown = dataManager.recordDetection(addrStr.c_str(), "BLE", rssi, lat, lon);
+            }
+            
             if (!detectionState.triggered) {
-                buzzer.detectionAlert();
+                if (isKnown) {
+                    if (hw.enable_leds) LED.knownDeviceAlert();
+                    if (hw.enable_buzzer) buzzer.knownDeviceBeep();
+                } else {
+                    if (hw.enable_buzzer || hw.enable_leds) buzzer.detectionAlert();
+                }
             }
             detectionState.recordDetection(false);
             return;
@@ -52,8 +86,24 @@ class AdvertisedDeviceCallbacks : public NimBLEAdvertisedDeviceCallbacks {
         if (!name.empty() && BLEDetector::checkDeviceNamePattern(name.c_str())) {
             outputBLEDetectionJSON(addrStr.c_str(), name.c_str(), rssi, "device_name");
             
+            HardwareConfig& hw = settingsManager.getHardware();
+            
+            // Record in database
+            double lat = (hw.enable_gps && gpsManager.isValid()) ? gpsManager.latitude() : 0.0;
+            double lon = (hw.enable_gps && gpsManager.isValid()) ? gpsManager.longitude() : 0.0;
+            bool isKnown = false;
+            
+            if (hw.enable_sd_card) {
+                isKnown = dataManager.recordDetection(addrStr.c_str(), "BLE", rssi, lat, lon);
+            }
+            
             if (!detectionState.triggered) {
-                buzzer.detectionAlert();
+                if (isKnown) {
+                    if (hw.enable_leds) LED.knownDeviceAlert();
+                    if (hw.enable_buzzer) buzzer.knownDeviceBeep();
+                } else {
+                    if (hw.enable_buzzer || hw.enable_leds) buzzer.detectionAlert();
+                }
             }
             detectionState.recordDetection(false);
             return;
@@ -67,9 +117,10 @@ void BLEDetector::begin() {
     pBLEScan = NimBLEDevice::getScan();
     pBLEScan->setAdvertisedDeviceCallbacks(new AdvertisedDeviceCallbacks());
     pBLEScan->setActiveScan(true);
-    pBLEScan->setInterval(100);
-    pBLEScan->setWindow(99);
-    printf("BLE scanner initialized\n");
+    // Optimized scan parameters for faster detection
+    pBLEScan->setInterval(50);  // Faster interval (50ms)
+    pBLEScan->setWindow(49);    // Maximize window time
+    printf("BLE scanner initialized (optimized timing)\n");
 }
 
 void BLEDetector::update() {

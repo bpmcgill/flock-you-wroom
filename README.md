@@ -6,7 +6,7 @@
 
 ## Overview
 
-Flock You is an advanced detection system designed to identify Flock Safety surveillance cameras, Raven gunshot detectors, and similar surveillance devices using multiple detection methodologies. Built for the Xiao ESP32 S3 microcontroller, it provides real-time monitoring with audio alerts and comprehensive JSON output. The system now includes specialized BLE service UUID fingerprinting for detecting SoundThinking/ShotSpotter Raven acoustic surveillance devices.
+Flock You is an advanced detection system designed to identify Flock Safety surveillance cameras, Raven gunshot detectors, and similar surveillance devices using multiple detection methodologies. Built for ESP32-WROOM-32 and Xiao ESP32 S3 microcontrollers, it provides real-time monitoring with audio/visual alerts, persistent database tracking, and comprehensive JSON output. The system features dual-core parallel scanning, GPS location tracking, and specialized BLE service UUID fingerprinting for detecting SoundThinking/ShotSpotter Raven acoustic surveillance devices.
 
 ## Features
 
@@ -18,19 +18,50 @@ Flock You is an advanced detection system designed to identify Flock Safety surv
 - **Device Name Pattern Matching**: Detects BLE devices by advertised names
 - **BLE Service UUID Detection**: Identifies Raven gunshot detectors by service UUIDs (NEW)
 
+### Dual-Core Architecture (ESP32-WROOM-32)
+- **Parallel Scanning**: BLE on Core 0, WiFi on Core 1 for maximum efficiency
+- **True Simultaneous Operation**: No missed detections during channel hopping
+- **Optimized Performance**: 5s BLE scans with 100ms intervals, 200ms WiFi channel hops
+- **95% BLE Duty Cycle**: Near-continuous BLE monitoring (49ms scan window, 50ms interval)
+
+### Persistent Detection Database (ESP32-WROOM-32)
+- **In-Memory Cache**: Fast lookup with HashMap (500 device capacity)
+- **SD Card Storage**: Detections, locations, and device index files
+- **Known Device Detection**: Yellow LED alert for re-detected devices vs red for new
+- **GPS Tracking**: Multiple location records per device
+- **GeoJSON Export**: OpenStreetMap-compatible format (BOOT button 2s hold)
+- **CSV Export**: Spreadsheet-compatible detection logs
+- **Auto-Flush**: Database writes every 30 seconds
+
+### Configuration System (ESP32-WROOM-32)
+- **config.json**: SD card-based hardware and scanning configuration
+- **Hardware Toggle**: Enable/disable GPS, LEDs, buzzer, OLED, SD card
+- **Scan Tuning**: Adjust channel hop speed, BLE intervals, RSSI threshold
+- **Passive Buzzer Support**: Musical tones via PWM (1500Hz known, 2500Hz new)
+- **LED Modes**: 6 pre-built modes (Unified, Status, Signal, Counter, Threat, Custom)
+- **Individual LED Control**: Assign specific functions to each of 4 LEDs
+- **Runtime Adaptation**: System adapts to missing hardware components
+
+See [CONFIGURATION.md](CONFIGURATION.md) for complete details and [LED_MODES.md](LED_MODES.md) for LED configuration guide.
+
 ### Enhanced Visual & Audio Feedback System (ESP32-WROOM-32)
 - **LED Animations**: 4x WS2812B RGB LEDs with color-coded alerts
   - **Boot Sequence**: Blue LED fade-in animation
   - **Scanning Mode**: Slow green pulse (breathing effect)
   - **WiFi Detection**: Blue flash
   - **BLE Detection**: Purple flash
-  - **Detection Alert**: Fast red flashing (3 times)
+  - **Detection Alert**: Fast red flashing (3 times) for NEW devices
+  - **Known Device Alert**: Yellow flash (1 time) for re-detected devices
   - **Raven Detection**: Red + white strobe (critical threat)
   - **Heartbeat Pulse**: Orange pulse every 10 seconds while device in range
-- **Active Buzzer Alerts**: Simple on/off beeping
-  - **Boot Sequence**: 2 beeps on startup
-  - **Detection Alert**: 3 fast beeps when device detected
-  - **Heartbeat**: 2 beeps every 10 seconds while device in range
+- **Buzzer Alerts**: Active or passive buzzer support
+  - **Active Buzzer** (2-pin): Simple on/off beeping
+    - Boot: 2 beeps, Detection: 3 beeps, Heartbeat: 2 beeps
+  - **Passive Buzzer** (3-pin PWM): Musical tones
+    - Boot: C4-E4-G4-C5 musical scale
+    - New Device: 2500Hz high-pitched tone (3 beeps)
+    - Known Device: 1500Hz lower tone (1 beep)
+    - Heartbeat: 1800Hz dual-tone pulse
 - **OLED Display**: 128x64 SSD1315 display with real-time status
   - Detection count (WiFi + BLE)
   - GPS coordinates and status
@@ -81,7 +112,7 @@ Flock You is an advanced detection system designed to identify Flock Safety surv
 Component          | ESP32 GPIO | Notes
 -------------------|------------|----------------------------------
 WS2812B LEDs       | GPIO 5     | Data line (4 LEDs)
-Active Buzzer      | GPIO 23    | 2-pin 5V active buzzer
+Buzzer             | GPIO 23    | 2-pin active OR 3-pin passive
 OLED SDA           | GPIO 21    | I2C Data (SSD1315)
 OLED SCL           | GPIO 22    | I2C Clock (SSD1315)
 GPS TX             | GPIO 16    | UART2 RX (GPS transmit)
@@ -90,6 +121,7 @@ SD Card CS         | GPIO 15    | SPI Chip Select
 SD Card MOSI       | GPIO 13    | SPI MOSI (HSPI)
 SD Card MISO       | GPIO 12    | SPI MISO (HSPI)
 SD Card SCK        | GPIO 14    | SPI Clock (HSPI)
+BOOT Button        | GPIO 0     | Export database (hold 2 seconds)
 ```
 
 #### Complete Wiring Diagram for ESP32-WROOM-32 Setup
@@ -140,13 +172,26 @@ ESP32 DevKit V4           SD Card Module
 └─────────────┘          └──────────────┘
 ```
 
-**Active Buzzer Connection:**
+**Active Buzzer Connection (2-pin):**
 ```
 ESP32 DevKit V4           Active Buzzer (5V)
 ┌─────────────┐          ┌──────────────┐
 │  GPIO 23    │─────────>│ Positive (+) │
 │   GND       │─────────>│ Negative (-) │
 └─────────────┘          └──────────────┘
+Note: Set buzzer_is_passive: false in config.json
+```
+
+**Passive Buzzer Connection (3-pin PWM):**
+```
+ESP32 DevKit V4           Passive Buzzer
+┌─────────────┐          ┌──────────────┐
+│  GPIO 23    │─────────>│ I/O (Signal) │
+│ 3.3V or 5V  │─────────>│ VCC          │
+│   GND       │─────────>│ GND          │
+└─────────────┘          └──────────────┘
+Note: Set buzzer_is_passive: true in config.json
+      5V recommended for louder volume
 ```
 
 **Complete System Wiring Overview:**
@@ -359,6 +404,7 @@ When a Raven device is detected, the system provides:
 - **Flash Memory**: 4MB
 - **SRAM**: 520KB
 - **PSRAM**: None
+- **Cores**: Dual-core (Core 0: BLE, Core 1: WiFi + main loop)
 - **WiFi**: 2.4GHz 802.11 b/g/n
 - **Bluetooth**: BLE 4.2
 - **I2C**: Hardware I2C for OLED
@@ -366,6 +412,9 @@ When a Raven device is detected, the system provides:
 - **UART**: UART0 (USB serial), UART2 (GPS)
 - **GPIO**: 34 pins available
 - **Power**: 3.3V logic, 5V USB input
+- **SD Card**: FAT16/FAT32/exFAT support (auto-detected)
+- **Database**: In-memory HashMap with 500 device capacity
+- **Export Formats**: GeoJSON, CSV
 
 ### Xiao ESP32 S3
 - **Flash Memory**: 8MB
@@ -377,14 +426,20 @@ When a Raven device is detected, the system provides:
 ### WiFi Capabilities
 - **Frequency**: 2.4GHz only (13 channels)
 - **Mode**: Promiscuous monitoring
-- **Channel Hopping**: Automatic cycling every 2 seconds
+- **Channel Hopping**: 200ms per channel (2.6s full cycle)
+- **Adaptive Hopping**: Priority channels 1, 6, 11 (extra time when idle)
+- **RSSI Filtering**: -85dBm threshold (configurable)
 - **Packet Types**: Probe requests (0x04) and beacons (0x08)
+- **Core Assignment**: WiFi runs on Core 1
 
 ### BLE Capabilities
 - **Framework**: NimBLE-Arduino
 - **Scan Mode**: Active scanning
-- **Interval**: 100ms scan intervals
-- **Window**: 99ms scan windows
+- **Duration**: 5 seconds per scan
+- **Interval**: 50ms between scan starts (configurable: 100ms default)
+- **Window**: 49ms scan window (95% duty cycle)
+- **Detection**: MAC prefix, name patterns, Raven service UUIDs
+- **Core Assignment**: BLE runs on Core 0 (dedicated task)
 
 ### Audio System
 - **Boot Sequence**: 200Hz → 800Hz (300ms each)
@@ -461,19 +516,28 @@ When a Raven device is detected, the system provides:
 
 #### ESP32-WROOM-32 DevKit V4:
 1. **Power on** the device via USB
-2. **Watch the OLED display** show boot screen
-3. **Listen for boot beeps** and observe **blue LED fade-in** animation
-4. **Wait for initialization**:
+2. **Configuration loaded** from SD card `/config.json` (or defaults if missing)
+3. **Watch the OLED display** show boot screen
+4. **Listen for boot sequence**:
+   - Active buzzer: 2 beeps
+   - Passive buzzer: C4-E4-G4-C5 musical scale
+   - Blue LED fade-in animation
+5. **Wait for initialization**:
    - LED strip initializes (all LEDs briefly light up)
    - OLED displays "FLOCK DETECTOR v2.0"
-   - GPS module starts acquiring satellites
-   - SD card mounts and creates log file
-5. **Check OLED status**:
+   - GPS module starts acquiring satellites (if enabled)
+   - SD card mounts and loads database (if enabled)
+   - Database cache initialized (500 device capacity)
+6. **Check OLED status**:
    - Status should show "SCANNING"
    - GPS status will show "SEARCHING" then "FIX" when locked
    - SD card shows "OK" or "ERR"
-6. **System ready** when display shows all systems initialized
-7. **Green breathing LEDs** indicate active scanning mode
+   - Detection count shows WiFi/BLE totals
+7. **Dual-core scanning starts**:
+   - Core 0: BLE scanning (5s scans, 100ms intervals)
+   - Core 1: WiFi channel hopping (200ms per channel)
+8. **Green breathing LEDs** indicate active scanning mode
+9. **Export database**: Hold BOOT button (GPIO 0) for 2 seconds to export GeoJSON/CSV
 
 #### Xiao ESP32 S3 / Oui-Spy Device:
 1. **Power on** the Oui-Spy device
@@ -491,11 +555,20 @@ When a Raven device is detected, the system provides:
   - Green breathing: Scanning mode
   - Blue flash: WiFi detection
   - Purple flash: BLE detection
-  - Red flash: Flock Safety detection alert
+  - **Red flash (3x)**: NEW device detected (first time)
+  - **Yellow flash (1x)**: KNOWN device re-detected
   - Red/white strobe: Raven gunshot detector (critical threat)
   - Orange pulse: Heartbeat (device still in range)
-- **Audio Alerts**: Buzzer beeps for detections and heartbeat
+- **Audio Alerts**: 
+  - Active buzzer: 3 beeps (new), 1 beep (known)
+  - Passive buzzer: 2500Hz tone (new), 1500Hz tone (known)
+- **Database System**:
+  - In-memory cache with HashMap lookup (<1ms)
+  - Persistent storage: `/detections.db`, `/locations.db`, `/device_index.idx`
+  - Auto-flush every 30 seconds
+  - Known device detection with visual/audio feedback
 - **SD Card Logging**: All detections logged to CSV file with GPS coordinates
+- **Export Function**: Hold BOOT button 2s to export GeoJSON (OpenStreetMap) and CSV
 - **Serial Output**: Full JSON detection data via USB serial
 
 #### Xiao ESP32 S3 / Oui-Spy:
@@ -539,6 +612,107 @@ When a Raven device is detected, the system provides:
 - `00001809-0000-1000-8000-00805f9b34fb` - Health Service (Legacy 1.1.x)
 - `00001819-0000-1000-8000-00805f9b34fb` - Location Service (Legacy 1.1.x)
 
+## Configuration System (ESP32-WROOM-32)
+
+The system supports flexible configuration via `config.json` on the SD card. See [CONFIGURATION.md](CONFIGURATION.md) for complete details.
+
+### Quick Configuration
+
+1. **Copy example config to SD card**:
+   ```bash
+   cp config.json.example /path/to/sdcard/config.json
+   ```
+
+2. **Edit for your hardware**:
+   ```json
+   {
+     "hardware": {
+       "enable_gps": true,
+       "enable_leds": true,
+       "enable_buzzer": true,
+       "buzzer_is_passive": false,
+       "enable_oled": true,
+       "enable_sd_card": true
+     }
+   }
+   ```
+
+3. **Hardware options**:
+   - Set `enable_gps: false` if no GPS module
+   - Set `enable_leds: false` if no LED strip
+   - Set `enable_buzzer: false` if no buzzer
+   - Set `buzzer_is_passive: true` for 3-pin PWM buzzer (false for 2-pin active)
+   - Set `enable_oled: false` if no OLED display
+   - Set `enable_sd_card: false` to disable database/logging
+
+### Configuration Categories
+
+- **Hardware**: Enable/disable components (GPS, LEDs, buzzer, OLED, SD card)
+- **Scan**: Tuning (channel hop speed, BLE intervals, RSSI threshold)
+- **Audio**: Beep durations and audio enable/disable
+- **Display**: GPS/RSSI display, brightness, update rate
+- **Log**: Verbose logging, flush interval, auto-export
+
+### Effect of Disabling Hardware
+
+- **GPS disabled**: Location shown as 0,0, no coordinate tracking
+- **LEDs disabled**: No visual alerts (use buzzer/display/serial)
+- **Buzzer disabled**: Silent operation
+- **OLED disabled**: No local display (use serial monitor)
+- **SD card disabled**: No database, exports, or persistent storage
+
+See [CONFIGURATION.md](CONFIGURATION.md) for advanced configuration options.
+
+## Database System (ESP32-WROOM-32)
+
+The system maintains a persistent detection database on the SD card with in-memory caching for fast lookups.
+
+### Database Files
+
+- `/detections.db`: Device detections (MAC, Type, RSSI, FirstSeen, LastSeen, Count)
+- `/locations.db`: GPS locations per device (MAC, lat1,lon1;lat2,lon2;...)
+- `/device_index.idx`: Quick lookup index (MAC addresses)
+
+### Database Features
+
+- **In-Memory Cache**: HashMap with 500 device capacity (<1ms lookup)
+- **Auto-Flush**: Writes to SD card every 30 seconds
+- **Known Device Detection**: Different alerts for new vs re-detected devices
+- **Location Tracking**: Multiple GPS coordinates per device
+- **Export Function**: GeoJSON (OpenStreetMap) and CSV formats
+
+### Exporting Data
+
+1. **Hold BOOT button** (GPIO 0) for 2 seconds
+2. **GeoJSON file**: `/export_YYYYMMDD_HHMMSS.geojson` (for OpenStreetMap)
+3. **CSV file**: `/export_YYYYMMDD_HHMMSS.csv` (for spreadsheets)
+4. **LED feedback**: Blue pulse during export
+
+### Using Exported Data
+
+**OpenStreetMap**:
+1. Go to https://www.openstreetmap.org
+2. Click "Export" → "Manually select a different area"
+3. Use uMap or similar to import GeoJSON
+4. Visualize detection locations on map
+
+**Spreadsheet Analysis**:
+1. Open CSV in Excel/Google Sheets
+2. Analyze detection patterns, RSSI, timestamps
+3. Create charts and reports
+
+### Legacy Dataset Conversion
+
+Convert existing CSV datasets to the new database format:
+
+```powershell
+.\convert-datasets.ps1
+```
+
+This converts all CSV files in the `datasets/` folder and imports them into the database.
+
+See [SD_CARD_GUIDE.md](SD_CARD_GUIDE.md) for file structure details.
+
 ## Limitations
 
 ### Technical Constraints
@@ -558,23 +732,52 @@ When a Raven device is detected, the system provides:
 1. **OLED Not Working**: 
    - Check I2C connections (SDA=GPIO21, SCL=GPIO22)
    - Verify I2C address is 0x3C
-   - Try scanning I2C bus: `Wire.begin(); Wire.beginTransmission(0x3C);`
+   - Disable in config.json if not installed: `"enable_oled": false`
 2. **GPS Not Getting Fix**: 
    - Ensure GPS module has clear view of sky
    - Wait 1-5 minutes for initial fix (cold start)
    - Check UART connections (RX=GPIO16, TX=GPIO17)
+   - Disable in config.json if not installed: `"enable_gps": false`
 3. **SD Card Not Detected**:
    - Check SPI connections (CS=GPIO15, MOSI=GPIO13, MISO=GPIO12, SCK=GPIO14)
-   - Ensure SD card is formatted as FAT32
-   - Try lower SPI speed: `SD_SCK_MHZ(1)` instead of `SD_SCK_MHZ(4)`
+   - Ensure SD card is formatted as FAT32 (FAT16/exFAT also supported)
+   - Try different SD card (some cards are incompatible)
+   - Check serial output for filesystem detection errors
 4. **LEDs Not Working**:
    - Check data connection to GPIO5
    - Ensure 5V power supply is adequate (4 LEDs need ~240mA max)
    - Verify LED strip type (NEO_GRB + NEO_KHZ800)
-5. **Active Buzzer Always On/Off**:
-   - Verify buzzer is 5V active type (not passive/PWM)
+   - Disable in config.json if not installed: `"enable_leds": false`
+5. **Buzzer Issues**:
+   - **Active buzzer (2-pin)**: Set `"buzzer_is_passive": false`
+   - **Passive buzzer (3-pin)**: Set `"buzzer_is_passive": true`
    - Check connection to GPIO23
-   - Test with simple digitalWrite HIGH/LOW
+   - Verify power (active=5V, passive=3.3V or 5V)
+   - Disable in config.json if not installed: `"enable_buzzer": false`
+6. **Database Not Loading**:
+   - Check SD card is inserted and detected
+   - Verify `/detections.db`, `/locations.db`, `/device_index.idx` exist
+   - Check serial output for database errors
+   - Database auto-creates on first detection if missing
+7. **Export Not Working**:
+   - Hold BOOT button (GPIO 0) for full 2 seconds
+   - Check SD card has space (each export ~1-10KB per 100 devices)
+   - Watch for blue LED pulse during export
+   - Check serial output for export status
+8. **Config.json Not Loading**:
+   - Verify file is named exactly `config.json` (not `.txt`)
+   - Check file is in SD card root directory
+   - Validate JSON syntax (use https://jsonlint.com)
+   - Check serial output: "Loading settings from config.json" should appear
+9. **Yellow LED Alerts** (known devices always trigger):
+   - This is normal - device is in database
+   - Delete database files to reset detection history
+   - Or wait - database tracks first/last seen times
+10. **No Detections**:
+    - Check scanning is active (green breathing LEDs)
+    - Verify dual-core tasks started (check serial output)
+    - Ensure RSSI threshold isn't too strict (default: -85dBm)
+    - Increase BLE scan duration in config.json (try 10s)
 
 ### Common Issues - All Platforms
 1. **Web Server Won't Start**: Check Python version (3.8+) and virtual environment setup

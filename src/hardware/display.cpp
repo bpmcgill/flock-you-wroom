@@ -34,11 +34,11 @@ void Display::update(bool deviceInRange, int totalDetections, int wifiDetections
     display.setTextSize(1);
     display.setTextColor(SSD1306_WHITE);
     
-    // Header
+    // Line 1: Header
     display.setCursor(0, 0);
     display.println(F("FLOCK DETECTOR v2.0"));
     
-    // Status
+    // Line 2: Status
     display.print(F("Status: "));
     if (deviceInRange) {
         display.println(F("DETECTED!"));
@@ -46,27 +46,32 @@ void Display::update(bool deviceInRange, int totalDetections, int wifiDetections
         display.println(F("SCANNING"));
     }
     
-    // Detection counts
-    display.print(F("Detections: "));
+    // Line 3-4: Detection counts (MORE PROMINENT)
+    display.setTextSize(1);
+    display.print(F("Total: "));
+    display.setTextSize(2);
     display.println(totalDetections);
-    display.print(F("WiFi: "));
+    
+    display.setTextSize(1);
+    display.print(F("WiFi:"));
     display.print(wifiDetections);
-    display.print(F("  BLE: "));
+    display.print(F(" BLE:"));
     display.println(bleDetections);
     
-    // GPS status
+    // Line 5: GPS status
     display.print(F("GPS: "));
     if (gpsValid) {
         display.print(lat, 2);
         display.print(F(","));
-        display.println(lon, 2);
+        display.print(lon, 2);
     } else {
-        display.println(gpsStatus);
+        display.print(gpsStatus);
     }
     
-    // SD status
-    display.print(F("SD: "));
-    display.println(sdInitialized ? F("OK") : F("ERR"));
+    // Line 6: SD status
+    display.setCursor(90, 56);
+    display.print(F("SD:"));
+    display.print(sdInitialized ? F("OK") : F("X"));
     
     display.display();
 }
