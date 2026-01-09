@@ -76,10 +76,19 @@ See [CONFIGURATION.md](CONFIGURATION.md) for complete details and [LED_MODES.md]
 - **Satellite Count**: Displays number of satellites in view
 - **Fix Status**: Shows GPS fix status (FIX, SEARCHING, NO_GPS)
 
+### Real-Time Clock Support (ESP32-WROOM-32)
+- **DS3231 RTC Module**: High-precision timestamps (±2ppm accuracy)
+- **GPS Auto-Sync**: Automatically syncs from GPS every hour
+- **Battery Backup**: CR2032 maintains time during power loss
+- **GPS-Independent**: Accurate timestamps even without GPS signal
+- **Temperature Compensated**: TCXO for stability across temperature ranges
+- See [RTC_SETUP.md](RTC_SETUP.md) for wiring and configuration
+
 ### SD Card Data Logging (ESP32-WROOM-32)
 - **CSV Log Files**: Automatic logging to MicroSD card
 - **Detection Records**: Timestamp, protocol, MAC, RSSI, GPS coordinates
 - **Persistent Storage**: Data survives power cycles
+- **Accurate Timestamps**: Uses RTC when available, falls back to millis()
 
 ### Audio Alert System (Xiao ESP32 S3)
 - **Boot Sequence**: 2 beeps (low pitch → high pitch) on startup
@@ -101,6 +110,7 @@ See [CONFIGURATION.md](CONFIGURATION.md) for complete details and [LED_MODES.md]
 - **Microcontroller**: ESP32-WROOM-32 on ESP32 DevKit V4 board
 - **LED System**: 4x WS2812B RGB LEDs (addressable LED strip)
 - **Display**: SSD1315 OLED Display (128x64, Blue/Yellow, I2C)
+- **RTC**: DS3231 Real-Time Clock Module (I2C, optional)
 - **GPS Module**: GY-NEO6Mv2 GPS Module (UART)
 - **Storage**: MicroSD Card Module (SPI)
 - **Audio**: 2-pin 5V Active Buzzer
@@ -115,6 +125,8 @@ WS2812B LEDs       | GPIO 5     | Data line (4 LEDs)
 Buzzer             | GPIO 23    | 2-pin active OR 3-pin passive
 OLED SDA           | GPIO 21    | I2C Data (SSD1315)
 OLED SCL           | GPIO 22    | I2C Clock (SSD1315)
+RTC SDA            | GPIO 21    | I2C Data (DS3231, shared w/ OLED)
+RTC SCL            | GPIO 22    | I2C Clock (DS3231, shared w/ OLED)
 GPS TX             | GPIO 16    | UART2 RX (GPS transmit)
 GPS RX             | GPIO 17    | UART2 TX (GPS receive)
 SD Card CS         | GPIO 15    | SPI Chip Select
@@ -123,6 +135,10 @@ SD Card MISO       | GPIO 12    | SPI MISO (HSPI)
 SD Card SCK        | GPIO 14    | SPI Clock (HSPI)
 BOOT Button        | GPIO 0     | Export database (hold 2 seconds)
 ```
+
+**Note:** OLED and RTC share the I2C bus (GPIO 21/22) with different addresses (0x3C and 0x68).
+
+**For complete wiring diagrams and troubleshooting, see [WIRING.md](WIRING.md)**
 
 #### Complete Wiring Diagram for ESP32-WROOM-32 Setup
 
@@ -208,13 +224,28 @@ Note: Set buzzer_is_passive: true in config.json
     ┌────▼──┐     ┌───▼────┐    ┌────────┐      ┌──────▼──┐  │
     │ LEDs  │     │  GPS   │    │  OLED  │      │   SD    │  │
     │(GPIO5)│     │(16,17) │    │(21,22) │      │(12-15)  │  │
-    └───────┘     └────────┘    └────────┘      └─────────┘  │
-                                                             │
-                                                       ┌─────▼──┐
-                                                       │ Buzzer │
-                                                       │(GPIO23)│
-                                                       └────────┘
+    └───────┘     └────────┘    └───┬────┘      └─────────┘  │
+                                     │                        │
+                               ┌─────▼────┐             ┌─────▼──┐
+                               │   RTC    │             │ Buzzer │
+                               │ (21,22)  │             │(GPIO23)│
+                               │ Shared   │             └────────┘
+                               └──────────┘
 ```
+
+**See [WIRING.md](WIRING.md) for detailed component connections and troubleshooting.**
+
+## Quick Reference Guides
+
+- **[WIRING.md](WIRING.md)** - Complete wiring diagrams, pin mappings, and troubleshooting
+- **[QUICK_START.md](QUICK_START.md)** - Fast setup guide for getting started
+- **[CONFIGURATION.md](CONFIGURATION.md)** - Hardware and scanning configuration via config.json
+- **[LED_MODES.md](LED_MODES.md)** - LED behavior modes and customization
+- **[RTC_SETUP.md](RTC_SETUP.md)** - Real-Time Clock setup and GPS synchronization
+- **[SD_CARD_GUIDE.md](SD_CARD_GUIDE.md)** - SD card setup and database management
+- **[FILE_STRUCTURE.md](FILE_STRUCTURE.md)** - Project organization and code structure
+
+---
 
 ### Option 2: Oui-Spy Device (Available at colonelpanic.tech)
 - **Microcontroller**: Xiao ESP32 S3

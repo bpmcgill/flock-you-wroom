@@ -1,6 +1,7 @@
 {
   "hardware": {
     "enable_gps": true,
+    "enable_rtc": false,
     "enable_leds": true,
     "enable_buzzer": true,
     "buzzer_is_passive": false,

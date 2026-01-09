@@ -48,3 +48,27 @@ String GPSManager::getStatus() {
     }
     return "NO_GPS";
 }
+
+int GPSManager::getYear() {
+    return gps.date.year();
+}
+
+int GPSManager::getMonth() {
+    return gps.date.month();
+}
+
+int GPSManager::getDay() {
+    return gps.date.day();
+}
+
+int GPSManager::getHour() {
+    return gps.time.hour();
+}
+
+int GPSManager::getMinute() {
+    return gps.time.minute();
+}
+
+int GPSManager::getSecond() {
+    return gps.time.second();
+}

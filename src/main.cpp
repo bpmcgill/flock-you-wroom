@@ -17,6 +17,7 @@
 #include "hardware/buzzer.h"
 #include "hardware/display.h"
 #include "hardware/gps_manager.h"
+#include "hardware/rtc_manager.h"
 #include "hardware/sd_logger.h"
 #include "hardware/data_manager.h"  // Database for detection tracking
 
@@ -110,6 +111,15 @@ void setup() {
         printf("GPS disabled in config\n");
     }
     
+    if (hw.enable_rtc) {
+        rtcManager.begin();
+        if (rtcManager.isValid()) {
+            printf("RTC time: %s\n", rtcManager.getDateTimeString().c_str());
+        }
+    } else {
+        printf("RTC disabled in config\n");
+    }
+    
     if (hw.enable_sd_card && sdAvailable) {
         sdLogger.begin();
         
@@ -159,6 +169,22 @@ void loop() {
     // Update GPS data
     if (hw.enable_gps) {
         gpsManager.update();
+        
+        // Sync RTC from GPS once per hour if both are enabled
+        if (hw.enable_rtc && gpsManager.isValid()) {
+            static unsigned long lastRTCSync = 0;
+            if (millis() - lastRTCSync > 3600000) {  // 1 hour
+                rtcManager.syncFromGPS(
+                    gpsManager.getYear(),
+                    gpsManager.getMonth(),
+                    gpsManager.getDay(),
+                    gpsManager.getHour(),
+                    gpsManager.getMinute(),
+                    gpsManager.getSecond()
+                );
+                lastRTCSync = millis();
+            }
+        }
     }
     
     // Handle WiFi channel hopping (runs on Core 1)
@@ -265,8 +291,6 @@ void loop() {
             }
         }
     }
-        }
-    }    
-    
+        
     delay(100);
 }

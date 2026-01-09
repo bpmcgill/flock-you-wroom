@@ -39,6 +39,7 @@ bool SettingsManager::loadFromSD() {
     JsonObject hw = doc["hardware"];
     if (!hw.isNull()) {
         settings.hardware.enable_gps = hw["enable_gps"] | true;
+        settings.hardware.enable_rtc = hw["enable_rtc"] | false;
         settings.hardware.enable_leds = hw["enable_leds"] | true;
         settings.hardware.enable_buzzer = hw["enable_buzzer"] | true;
         settings.hardware.buzzer_is_passive = hw["buzzer_is_passive"] | false;
@@ -100,6 +101,7 @@ bool SettingsManager::saveToSD() {
     // Hardware
     JsonObject hw = doc.createNestedObject("hardware");
     hw["enable_gps"] = settings.hardware.enable_gps;
+    hw["enable_rtc"] = settings.hardware.enable_rtc;
     hw["enable_leds"] = settings.hardware.enable_leds;
     hw["enable_buzzer"] = settings.hardware.enable_buzzer;
     hw["buzzer_is_passive"] = settings.hardware.buzzer_is_passive;
@@ -158,6 +160,7 @@ bool SettingsManager::saveToSD() {
 void SettingsManager::printSettings() {
     printf("\n=== Hardware Configuration ===\n");
     printf("GPS:     %s\n", settings.hardware.enable_gps ? "ENABLED" : "DISABLED");
+    printf("RTC:     %s\n", settings.hardware.enable_rtc ? "ENABLED" : "DISABLED");
     printf("LEDs:    %s\n", settings.hardware.enable_leds ? "ENABLED" : "DISABLED");
     printf("Buzzer:  %s\n", settings.hardware.enable_buzzer ? "ENABLED" : "DISABLED");
     printf("OLED:    %s\n", settings.hardware.enable_oled ? "ENABLED" : "DISABLED");
