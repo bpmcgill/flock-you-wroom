@@ -28,6 +28,7 @@ enum LEDFunction {
 // Hardware enable/disable flags
 struct HardwareConfig {
     bool enable_gps = true;
+    bool enable_rtc = false;                // DS3231 RTC for accurate timestamps
     bool enable_leds = true;
     bool enable_buzzer = true;
     bool buzzer_is_passive = false;         // true for 3-pin passive, false for 2-pin active

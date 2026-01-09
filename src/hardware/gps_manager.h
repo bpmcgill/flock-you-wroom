@@ -16,6 +16,14 @@ public:
     int satellites();
     String getLocation();
     String getStatus();
+    
+    // Date/Time for RTC sync
+    int getYear();
+    int getMonth();
+    int getDay();
+    int getHour();
+    int getMinute();
+    int getSecond();
 
 private:
     TinyGPSPlus gps;

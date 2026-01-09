@@ -1,4 +1,6 @@
 #include "data_manager.h"
+#include "rtc_manager.h"
+#include "../config/settings.h"
 #include <ArduinoJson.h>
 
 DataManager dataManager;
@@ -74,6 +76,15 @@ void DataManager::loadDatabase() {
     }
     
     printf("Loaded %d devices from database\n", loaded);
+}
+
+// Helper to get timestamp - uses RTC if available, else millis()
+String DataManager::getTimestamp() {
+    if (settingsManager.getHardware().enable_rtc && rtcManager.isValid()) {
+        return rtcManager.getDateTimeString();
+    }
+    // Fallback to millis
+    return String(millis() / 1000.0, 3) + "s";
 }
 
 bool DataManager::recordDetection(const char* mac, const char* type, int rssi,

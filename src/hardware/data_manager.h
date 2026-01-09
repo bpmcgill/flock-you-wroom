@@ -58,6 +58,7 @@ private:
     void loadDatabase();
     void saveToDatabase();
     void addLocation(const char* mac, double lat, double lon);
+    String getTimestamp();  // Returns RTC timestamp if available, else millis()
 };
 
 extern DataManager dataManager;
